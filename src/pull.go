@@ -1,8 +1,11 @@
 package src
 
 import (
+	"bytes"
 	"context"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/heroku/docker-registry-client/registry"
+	"github.com/moby/buildkit/frontend/dockerfile/parser"
 	"io/ioutil"
 )
 
@@ -14,6 +17,14 @@ func Pull(ctx context.Context, images ...string) error {
 	if err != nil {
 		return err
 	}
+
+	r, err := parser.Parse(bytes.NewBufferString(`
+FROM alpine:latest
+`))
+	if err != nil {
+		return err
+	}
+	spew.Dump(r)
 
 	manifest, err := hub.Manifest("library/alpine", "latest")
 	if err != nil {
@@ -32,5 +43,6 @@ func Pull(ctx context.Context, images ...string) error {
 		ioutil.WriteFile(layer.BlobSum.Hex()+".tgz", content, 0644)
 		reader.Close()
 	}
+
 	return nil
 }
