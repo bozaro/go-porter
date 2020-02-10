@@ -3,13 +3,22 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path"
+	"runtime/debug"
+	"strings"
+
 	"github.com/joomcode/go-porter/src"
 	"github.com/mkideal/cli"
-	"os"
 )
 
 type CmdRootT struct {
 	cli.Helper
+	StateDir string `cli:"state" usage:"State directory"`
+}
+
+func (c CmdRootT) GetStateDir() string {
+	return c.StateDir
 }
 
 type cmdPullT struct {
@@ -28,7 +37,16 @@ var root = &cli.Command{
 }
 
 func newCmdRoot() CmdRootT {
+	buildInfo, ok := debug.ReadBuildInfo()
+	if !ok {
+		panic("can't read build info")
+	}
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		panic(err)
+	}
 	return CmdRootT{
+		StateDir: path.Join(cacheDir, strings.ReplaceAll(buildInfo.Main.Path, "/", ".")),
 	}
 }
 
@@ -46,7 +64,11 @@ var cmdPull = &cli.Command{
 		argv := c.Argv().(*cmdPullT)
 		ctx := context.Background()
 		_ = argv
-		return src.Pull(ctx, c.Args()...)
+		state, err := src.NewState(argv)
+		if err != nil {
+			return err
+		}
+		return state.Pull(ctx, c.Args()...)
 	},
 }
 
