@@ -24,6 +24,12 @@ func (c CmdRootT) GetStateDir() string {
 type cmdPullT struct {
 	CmdRootT
 	Target string `cli:"t,target" usage:"Target directory"`
+	Cache  bool   `cli:"cache" usage:"Don't refresh cached manifest files'"`
+}
+
+type cmdBuildT struct {
+	CmdRootT
+	Dockerfile string `cli:"f,file" usage:"Name of the Dockerfile"`
 }
 
 var root = &cli.Command{
@@ -63,18 +69,44 @@ var cmdPull = &cli.Command{
 	Fn: func(c *cli.Context) error {
 		argv := c.Argv().(*cmdPullT)
 		ctx := context.Background()
-		_ = argv
 		state, err := src.NewState(argv)
 		if err != nil {
 			return err
 		}
-		return state.Pull(ctx, c.Args()...)
+		return state.Pull(ctx, argv.Cache, c.Args()...)
+	},
+}
+
+var cmdBuild = &cli.Command{
+	Name: "build",
+	Desc: "Build an image from a Dockerfile",
+	Argv: func() interface{} {
+		return &cmdBuildT{
+			CmdRootT: newCmdRoot(),
+		}
+	},
+	NumArg:      cli.ExactN(1),
+	CanSubRoute: true,
+	Fn: func(c *cli.Context) error {
+		argv := c.Argv().(*cmdBuildT)
+		ctx := context.Background()
+		state, err := src.NewState(argv)
+		if err != nil {
+			return err
+		}
+		digest, err := state.Build(ctx, argv.Dockerfile, c.Args()[0])
+		if err != nil {
+			return err
+		}
+		fmt.Println(digest)
+		return nil
 	},
 }
 
 func main() {
 	if err := cli.Root(root,
 		cli.Tree(cmdPull),
+		cli.Tree(cmdBuild),
 	).Run(os.Args[1:]); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

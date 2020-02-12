@@ -3,8 +3,10 @@ package src
 import (
 	"os"
 	"path"
+	"sync"
 	"time"
 
+	"github.com/heroku/docker-registry-client/registry"
 	"github.com/joomcode/errorx"
 	bolt "go.etcd.io/bbolt"
 )
@@ -16,6 +18,9 @@ type StateConfig interface {
 type State struct {
 	stateDir string
 	db       *bolt.DB
+
+	registryLock sync.RWMutex
+	registry     map[string]*registry.Registry
 }
 
 func NewState(config StateConfig) (*State, error) {
@@ -31,6 +36,7 @@ func NewState(config StateConfig) (*State, error) {
 	return &State{
 		stateDir: stateDir,
 		db:       db,
+		registry: map[string]*registry.Registry{},
 	}, nil
 }
 

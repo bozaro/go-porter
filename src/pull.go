@@ -1,62 +1,43 @@
 package src
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"os"
 	"path"
 	"strconv"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/docker/distribution/manifest/schema1"
-	"github.com/heroku/docker-registry-client/registry"
 	"github.com/joomcode/errorx"
-	"github.com/moby/buildkit/frontend/dockerfile/parser"
 	"github.com/opencontainers/go-digest"
 	bolt "go.etcd.io/bbolt"
 )
 
 var bucketManifest = []byte("manifest.v1")
 
-func (s *State) Pull(ctx context.Context, images ...string) error {
-	url := "https://registry-1.docker.io/"
-	username := "" // anonymous
-	password := "" // anonymous
-	hub, err := registry.New(url, username, password)
-	if err != nil {
-		return err
-	}
-
-	info := &ImageInfo{
-		Name:       "alpine:latest",
-		Repository: "library/alpine",
-		Reference:  "latest",
-	}
-
-	r, err := parser.Parse(bytes.NewBufferString(`
-FROM alpine:latest
-`))
-	if err != nil {
-		return err
-	}
-	spew.Dump(r)
-
-	manifest, err := s.Manifest(hub, info, true)
-	if err != nil {
-		return err
-	}
-
-	for _, layer := range manifest.FSLayers {
-		_, err := s.DownloadBlob(hub, "library/alpine", layer.BlobSum)
+func (s *State) Pull(ctx context.Context, allowCached bool, imageNames ...string) error {
+	for _, imageName := range imageNames {
+		info, err := s.ResolveImage(imageName)
 		if err != nil {
 			return err
+		}
+
+		manifest, err := s.Manifest(ctx, info, allowCached)
+		if err != nil {
+			return err
+		}
+
+		for _, layer := range manifest.FSLayers {
+			_, err := s.DownloadBlob(ctx, info, layer.BlobSum)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func (s *State) Manifest(hub *registry.Registry, imageInfo *ImageInfo, allowCached bool) (*schema1.SignedManifest, error) {
+func (s *State) Manifest(ctx context.Context, imageInfo *ImageInfo, allowCached bool) (*schema1.SignedManifest, error) {
 	var cached []byte
 	if allowCached {
 		if err := s.db.View(func(tx *bolt.Tx) error {
@@ -76,7 +57,13 @@ func (s *State) Manifest(hub *registry.Registry, imageInfo *ImageInfo, allowCach
 			return &manifest, nil
 		}
 	}
-	manifest, err := hub.Manifest("library/alpine", "latest")
+
+	hub, err := s.Registry(ctx, imageInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	manifest, err := hub.Manifest(imageInfo.Repository, "latest")
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +83,7 @@ func (s *State) Manifest(hub *registry.Registry, imageInfo *ImageInfo, allowCach
 	return manifest, err
 }
 
-func (s *State) DownloadBlob(hub *registry.Registry, repository string, digest digest.Digest) (string, error) {
+func (s *State) DownloadBlob(ctx context.Context, imageInfo *ImageInfo, digest digest.Digest) (string, error) {
 	target := path.Join(s.stateDir, digest.Algorithm().String(), digest.Hex()[0:2], digest.Hex()[2:])
 	_ = os.MkdirAll(path.Dir(target), 0755)
 	_, err := os.Stat(target)
@@ -108,7 +95,12 @@ func (s *State) DownloadBlob(hub *registry.Registry, repository string, digest d
 		return "", errorx.InternalError.Wrap(err, "can't get file state: %s", target)
 	}
 
-	reader, err := hub.DownloadBlob(repository, digest)
+	hub, err := s.Registry(ctx, imageInfo)
+	if err != nil {
+		return "", err
+	}
+
+	reader, err := hub.DownloadBlob(imageInfo.Repository, digest)
 	if err != nil {
 		return "", err
 	}
