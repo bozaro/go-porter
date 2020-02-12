@@ -2,10 +2,10 @@ package src
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
 	"github.com/opencontainers/go-digest"
 )
@@ -19,7 +19,10 @@ func (s *State) Build(ctx context.Context, dockerFile string, contextPath string
 	if err != nil {
 		return "", err
 	}
-	spew.Dump(parsed)
+
+	for _, child := range parsed.AST.Children {
+		fmt.Println(child.Value)
+	}
 
 	return "", nil
 }
