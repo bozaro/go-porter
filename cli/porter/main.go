@@ -82,7 +82,12 @@ var cmdPull = &cli.Command{
 		if err != nil {
 			return err
 		}
-		return state.Pull(ctx, argv.Cache, c.Args()...)
+		for _, imageName := range c.Args() {
+			if _, err := state.Pull(ctx, imageName, argv.Cache); err != nil {
+				return err
+			}
+		}
+		return nil
 	},
 }
 

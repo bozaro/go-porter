@@ -32,6 +32,13 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 	if err != nil {
 		return "", err
 	}
+
+	baseManifest, err := s.Pull(ctx, stage.BaseName, true)
+	if err != nil {
+		return "", err
+	}
+
+	spew.Dump(baseManifest)
 	spew.Dump(stage)
 
 	return "", nil

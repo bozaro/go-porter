@@ -7,37 +7,37 @@ import (
 	"path"
 	"strconv"
 
-	"github.com/docker/distribution/manifest/schema1"
+	"github.com/docker/distribution"
+	"github.com/docker/distribution/manifest/schema2"
 	"github.com/joomcode/errorx"
-	"github.com/opencontainers/go-digest"
 	bolt "go.etcd.io/bbolt"
 )
 
-var bucketManifest = []byte("manifest.v1")
+var bucketManifest = []byte("manifest.v2")
 
-func (s *State) Pull(ctx context.Context, allowCached bool, imageNames ...string) error {
-	for _, imageName := range imageNames {
-		info, err := s.ResolveImage(imageName)
+func (s *State) Pull(ctx context.Context, imageName string, allowCached bool) (*schema2.DeserializedManifest, error) {
+	info, err := s.ResolveImage(imageName)
+	if err != nil {
+		return nil, err
+	}
+
+	manifest, err := s.Manifest(ctx, info, allowCached)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.DownloadBlob(ctx, info, manifest.Config); err != nil {
+		return nil, err
+	}
+	for _, layer := range manifest.Layers {
+		_, err := s.DownloadBlob(ctx, info, layer)
 		if err != nil {
-			return err
-		}
-
-		manifest, err := s.Manifest(ctx, info, allowCached)
-		if err != nil {
-			return err
-		}
-
-		for _, layer := range manifest.FSLayers {
-			_, err := s.DownloadBlob(ctx, info, layer.BlobSum)
-			if err != nil {
-				return err
-			}
+			return nil, err
 		}
 	}
-	return nil
+	return manifest, nil
 }
 
-func (s *State) Manifest(ctx context.Context, imageInfo *ImageInfo, allowCached bool) (*schema1.SignedManifest, error) {
+func (s *State) Manifest(ctx context.Context, imageInfo *ImageInfo, allowCached bool) (*schema2.DeserializedManifest, error) {
 	var cached []byte
 	if allowCached {
 		if err := s.db.View(func(tx *bolt.Tx) error {
@@ -52,7 +52,7 @@ func (s *State) Manifest(ctx context.Context, imageInfo *ImageInfo, allowCached 
 		}
 	}
 	if len(cached) > 0 {
-		var manifest schema1.SignedManifest
+		var manifest schema2.DeserializedManifest
 		if err := manifest.UnmarshalJSON(cached); err == nil {
 			return &manifest, nil
 		}
@@ -62,8 +62,7 @@ func (s *State) Manifest(ctx context.Context, imageInfo *ImageInfo, allowCached 
 	if err != nil {
 		return nil, err
 	}
-
-	manifest, err := hub.Manifest(imageInfo.Repository, "latest")
+	manifest, err := hub.ManifestV2(imageInfo.Repository, imageInfo.Reference)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +82,8 @@ func (s *State) Manifest(ctx context.Context, imageInfo *ImageInfo, allowCached 
 	return manifest, err
 }
 
-func (s *State) DownloadBlob(ctx context.Context, imageInfo *ImageInfo, digest digest.Digest) (string, error) {
+func (s *State) DownloadBlob(ctx context.Context, imageInfo *ImageInfo, blob distribution.Descriptor) (string, error) {
+	digest := blob.Digest
 	target := path.Join(s.stateDir, digest.Algorithm().String(), digest.Hex()[0:2], digest.Hex()[2:])
 	_ = os.MkdirAll(path.Dir(target), 0755)
 	_, err := os.Stat(target)
