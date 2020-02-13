@@ -30,6 +30,7 @@ type cmdPullT struct {
 type cmdBuildT struct {
 	CmdRootT
 	Dockerfile string `cli:"f,file" usage:"Name of the Dockerfile"`
+	Target     string `cli:"target" usage:"Set the target build stage to build"`
 }
 
 var root = &cli.Command{
@@ -40,6 +41,14 @@ var root = &cli.Command{
 		os.Exit(1)
 		return nil
 	},
+}
+
+func (c cmdBuildT) GetDockerfile() string {
+	return c.Dockerfile
+}
+
+func (c cmdBuildT) GetTarget() string {
+	return c.Target
 }
 
 func newCmdRoot() CmdRootT {
@@ -94,7 +103,7 @@ var cmdBuild = &cli.Command{
 		if err != nil {
 			return err
 		}
-		digest, err := state.Build(ctx, argv.Dockerfile, c.Args()[0])
+		digest, err := state.Build(ctx, argv, c.Args()[0])
 		if err != nil {
 			return err
 		}
