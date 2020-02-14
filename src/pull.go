@@ -2,7 +2,9 @@ package src
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path"
 	"strconv"
@@ -82,17 +84,43 @@ func (s *State) Manifest(ctx context.Context, imageInfo *ImageInfo, allowCached 
 	return manifest, err
 }
 
-func (s *State) DownloadBlob(ctx context.Context, imageInfo *ImageInfo, blob distribution.Descriptor) (string, error) {
+func (s *State) blobName(blob distribution.Descriptor) string {
 	digest := blob.Digest
-	target := path.Join(s.stateDir, digest.Algorithm().String(), digest.Hex()[0:2], digest.Hex()[2:])
-	_ = os.MkdirAll(path.Dir(target), 0755)
-	_, err := os.Stat(target)
+	prefix := path.Join(s.stateDir, digest.Algorithm().String(), digest.Hex()[0:2], digest.Hex()[2:])
+	return prefix + s.mediaTypeSuffix(blob.MediaType)
+}
+
+func (s *State) mediaTypeSuffix(mediaType string) string {
+	switch mediaType {
+	case "application/vnd.docker.container.image.v1+json":
+		return ".json"
+	case "application/vnd.docker.image.rootfs.diff.tar.gzip":
+		return ".tar.gz"
+	default:
+		fmt.Println(mediaType)
+		return ".bin"
+	}
+}
+
+func (s *State) OpenBlob(ctx context.Context, blob distribution.Descriptor) (io.ReadCloser, error) {
+	return os.Open(s.blobName(blob))
+}
+
+func (s *State) ReadBlob(ctx context.Context, blob distribution.Descriptor) ([]byte, error) {
+	return ioutil.ReadFile(s.blobName(blob))
+}
+
+func (s *State) DownloadBlob(ctx context.Context, imageInfo *ImageInfo, blob distribution.Descriptor) (string, error) {
+	filename := s.blobName(blob)
+	digest := blob.Digest
+	_ = os.MkdirAll(path.Dir(filename), 0755)
+	_, err := os.Stat(filename)
 	if err == nil {
 		// Already downloaded
-		return target, nil
+		return filename, nil
 	}
 	if !os.IsNotExist(err) {
-		return "", errorx.InternalError.Wrap(err, "can't get file state: %s", target)
+		return "", errorx.InternalError.Wrap(err, "can't get file state: %s", filename)
 	}
 
 	hub, err := s.Registry(ctx, imageInfo)
@@ -107,7 +135,7 @@ func (s *State) DownloadBlob(ctx context.Context, imageInfo *ImageInfo, blob dis
 	defer reader.Close()
 
 	for i := 0; ; i++ {
-		tmp := target + "~" + strconv.Itoa(i)
+		tmp := filename + "~" + strconv.Itoa(i)
 		f, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0644)
 		if os.IsExist(err) {
 			continue
@@ -124,10 +152,10 @@ func (s *State) DownloadBlob(ctx context.Context, imageInfo *ImageInfo, blob dis
 			os.Remove(tmp)
 			return "", errorx.InternalError.Wrap(err, "error on closing file: %s", tmp)
 		}
-		if err := os.Rename(tmp, target); err != nil {
+		if err := os.Rename(tmp, filename); err != nil {
 			os.Remove(tmp)
-			return "", errorx.InternalError.Wrap(err, "error on rename file: %s -> %s", tmp, target)
+			return "", errorx.InternalError.Wrap(err, "error on rename file: %s -> %s", tmp, filename)
 		}
-		return target, nil
+		return filename, nil
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"os"
 	"path"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/joomcode/errorx"
 	"github.com/moby/buildkit/frontend/dockerfile/instructions"
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
@@ -38,8 +37,14 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 		return "", err
 	}
 
-	spew.Dump(baseManifest)
-	spew.Dump(stage)
+	buildContext, err := NewBuildContext(ctx, s, baseManifest)
+	if err != nil {
+		return "", err
+	}
+
+	if err := buildContext.SaveForDocker(ctx, "saved.tar", "test:latest"); err != nil {
+		return "", err
+	}
 
 	return "", nil
 }
