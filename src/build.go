@@ -42,6 +42,12 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 		return "", err
 	}
 
+	for _, command := range stage.Commands {
+		if err := buildContext.ApplyCommand(command); err != nil {
+			return "", err
+		}
+	}
+
 	if err := buildContext.SaveForDocker(ctx, "saved.tar", "test:latest"); err != nil {
 		return "", err
 	}
@@ -131,6 +137,11 @@ func (s *State) parseDockerFile(dockerFile string) ([]*instructions.Stage, error
 			stage.Commands = append(stage.Commands, command)
 			continue
 		}
+		/* TODO: if expr, ok := cmd.(instructions.SupportsSingleWordExpansion); ok {
+			if err := expr.Expand(b.expander); err != nil {
+				return err
+			}
+		}*/
 		return nil, errorx.InternalError.New("unexpected instruction: %s", child.Original)
 	}
 	return stages, nil

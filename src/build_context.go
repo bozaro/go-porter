@@ -9,11 +9,16 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"reflect"
+	"strings"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema2"
 	"github.com/joomcode/errorx"
 	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
+	"github.com/moby/buildkit/frontend/dockerfile/instructions"
+	"github.com/sirupsen/logrus"
 )
 
 type BuildContext struct {
@@ -77,6 +82,31 @@ func (b *BuildContext) SaveForDocker(ctx context.Context, filename string, tag s
 		return err
 	}
 	f = nil
+	return nil
+}
+
+func (b *BuildContext) ApplyCommand(cmd instructions.Command) error {
+	logrus.Infof("Apply command: %s", cmd)
+	switch cmd := cmd.(type) {
+	case *instructions.CopyCommand:
+		// TODO:
+		spew.Dump(cmd)
+	case *instructions.EntrypointCommand:
+		b.applyEntrypointCommand(cmd)
+	case *instructions.EnvCommand:
+		b.applyEnvCommand(cmd)
+	case *instructions.LabelCommand:
+		if b.imageManifest.Config.Labels == nil {
+			b.imageManifest.Config.Labels = make(map[string]string)
+		}
+		for _, pair := range cmd.Labels {
+			b.imageManifest.Config.Labels[pair.Key] = pair.Value
+		}
+	case *instructions.WorkdirCommand:
+		b.imageManifest.Config.WorkingDir = cmd.Path
+	default:
+		logrus.Errorf("Unsupported command [%s]: %s", reflect.TypeOf(cmd), cmd)
+	}
 	return nil
 }
 
@@ -239,4 +269,43 @@ func (b *BuildContext) calcLayerHash(ctx context.Context, layer distribution.Des
 		}
 	}
 	return hex.EncodeToString(sum256.Sum(nil)), size, nil
+}
+
+func (b *BuildContext) applyEnvCommand(cmd *instructions.EnvCommand) {
+	keys := map[string]struct{}{}
+	for _, pair := range cmd.Env {
+		keys[pair.Key] = struct{}{}
+	}
+	config := &b.imageManifest.Config
+	result := make([]string, 0, len(config.Env)+len(cmd.Env))
+	for _, env := range config.Env {
+		key := strings.Split(env, "=")[0]
+		if _, ok := keys[key]; ok {
+			continue
+		}
+		result = append(result, env)
+	}
+	for _, pair := range cmd.Env {
+		result = append(result, pair.Key+"="+pair.Value)
+	}
+	config.Env = result
+}
+
+func (b *BuildContext) applyEntrypointCommand(cmd *instructions.EntrypointCommand) {
+	var args []string = cmd.CmdLine
+	if cmd.PrependShell {
+		args = append(getShell(b.imageManifest.Config, b.imageManifest.OS), args...)
+	}
+	b.imageManifest.Config.Entrypoint = args
+}
+
+func getShell(config dockerfile2llb.ImageConfig, os string) []string {
+	if len(config.Shell) == 0 {
+		return append([]string{}, defaultShellForOS(os)[:]...)
+	}
+	return append([]string{}, config.Shell[:]...)
+}
+
+func defaultShellForOS(os string) []string {
+	return []string{"/bin/sh", "-c"}
 }
