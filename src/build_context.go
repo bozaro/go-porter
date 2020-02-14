@@ -36,6 +36,12 @@ func NewBuildContext(ctx context.Context, state *State, manifest *schema2.Deseri
 	if err := json.Unmarshal(blob, &imageManifest); err != nil {
 		return nil, err
 	}
+	for _, layer := range manifest.Layers {
+		_, err := state.LayerTree(ctx, layer)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &BuildContext{
 		state:         state,
 		layers:        manifest.Layers,
@@ -119,9 +125,10 @@ func (b *BuildContext) writeImageManifest(ctx context.Context, w *tar.Writer) (s
 	hash := hex.EncodeToString(sum256[:])
 
 	if err := w.WriteHeader(&tar.Header{
-		Name: hash + ".json",
-		Size: int64(len(data)),
-		Mode: 0644,
+		Name:     hash + ".json",
+		Size:     int64(len(data)),
+		Mode:     0644,
+		Typeflag: tar.TypeReg,
 	}); err != nil {
 		return "", err
 	}
@@ -202,17 +209,19 @@ func (b *BuildContext) writeLayer(ctx context.Context, w *tar.Writer, layer dist
 	}
 
 	if err := w.WriteHeader(&tar.Header{
-		Name: hash + "/",
-		Size: size,
-		Mode: 0755,
+		Name:     hash + "/",
+		Size:     size,
+		Mode:     0755,
+		Typeflag: tar.TypeDir,
 	}); err != nil {
 		return "", err
 	}
 
 	if err := w.WriteHeader(&tar.Header{
-		Name: hash + "/layer.tar",
-		Size: size,
-		Mode: 0644,
+		Name:     hash + "/layer.tar",
+		Size:     size,
+		Mode:     0644,
+		Typeflag: tar.TypeReg,
 	}); err != nil {
 		return "", err
 	}
