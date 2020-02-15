@@ -4,9 +4,11 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"github.com/docker/distribution"
 	"github.com/docker/docker/pkg/archive"
 	"io"
+	"io/ioutil"
 	"strings"
 )
 
@@ -30,12 +32,20 @@ func (s *State) LayerTree(ctx context.Context, blob distribution.Descriptor) (*T
 	}
 	defer f.Close()
 
+	treeFile := s.blobName(blob, ".tree")
+	if cached, err := ioutil.ReadFile(treeFile); err == nil {
+		var root TreeNode
+		if err := json.Unmarshal(cached, &root); err == nil {
+			return &root, nil
+		}
+	}
+
+	root := s.EmptyLayer()
 	r, err := gzip.NewReader(f)
 	if err != nil {
 		return nil, err
 	}
 
-	root := s.EmptyLayer()
 	t := tar.NewReader(r)
 	for {
 		item, err := t.Next()
@@ -56,6 +66,20 @@ func (s *State) LayerTree(ctx context.Context, blob distribution.Descriptor) (*T
 			}
 		}
 	}
+
+	if err := safeWrite(treeFile, func(w io.Writer) error {
+		cache, err := json.Marshal(root)
+		if err != nil {
+			return err
+		}
+		if _, err := w.Write(cache); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
 	return root, nil
 }
 
@@ -118,7 +142,7 @@ func (t *TreeNode) ApplyDiff(diff *TreeNode) {
 			}
 			if strings.HasPrefix(name, archive.WhiteoutPrefix) {
 				name = name[len(archive.WhiteoutPrefix):]
-				delete (t.Child, name)
+				delete(t.Child, name)
 				if len(t.Child) == 0 {
 					t.Child = nil
 				}
@@ -130,8 +154,8 @@ func (t *TreeNode) ApplyDiff(diff *TreeNode) {
 					t.Child = map[string]*TreeNode{}
 				}
 				old = &TreeNode{
-					Header:item.Header,
-					}
+					Header: item.Header,
+				}
 				t.Child[name] = old
 			}
 			old.ApplyDiff(item)

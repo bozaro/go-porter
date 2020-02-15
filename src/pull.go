@@ -3,16 +3,14 @@ package src
 import (
 	"context"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"os"
-	"path"
-	"strconv"
-
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema2"
 	"github.com/joomcode/errorx"
 	bolt "go.etcd.io/bbolt"
+	"io"
+	"io/ioutil"
+	"os"
+	"path"
 )
 
 var bucketManifest = []byte("manifest.v2")
@@ -84,10 +82,13 @@ func (s *State) Manifest(ctx context.Context, imageInfo *ImageInfo, allowCached 
 	return manifest, err
 }
 
-func (s *State) blobName(blob distribution.Descriptor) string {
+func (s *State) blobName(blob distribution.Descriptor, suffix string) string {
 	digest := blob.Digest
 	prefix := path.Join(s.stateDir, digest.Algorithm().String(), digest.Hex()[0:2], digest.Hex()[2:])
-	return prefix + s.mediaTypeSuffix(blob.MediaType)
+	if suffix == "" {
+		suffix = s.mediaTypeSuffix(blob.MediaType)
+	}
+	return prefix + suffix
 }
 
 func (s *State) mediaTypeSuffix(mediaType string) string {
@@ -103,15 +104,15 @@ func (s *State) mediaTypeSuffix(mediaType string) string {
 }
 
 func (s *State) OpenBlob(ctx context.Context, blob distribution.Descriptor) (io.ReadCloser, error) {
-	return os.Open(s.blobName(blob))
+	return os.Open(s.blobName(blob, ""))
 }
 
 func (s *State) ReadBlob(ctx context.Context, blob distribution.Descriptor) ([]byte, error) {
-	return ioutil.ReadFile(s.blobName(blob))
+	return ioutil.ReadFile(s.blobName(blob, ""))
 }
 
 func (s *State) DownloadBlob(ctx context.Context, imageInfo *ImageInfo, blob distribution.Descriptor) (string, error) {
-	filename := s.blobName(blob)
+	filename := s.blobName(blob, "")
 	digest := blob.Digest
 	_ = os.MkdirAll(path.Dir(filename), 0755)
 	_, err := os.Stat(filename)
@@ -134,28 +135,13 @@ func (s *State) DownloadBlob(ctx context.Context, imageInfo *ImageInfo, blob dis
 	}
 	defer reader.Close()
 
-	for i := 0; ; i++ {
-		tmp := filename + "~" + strconv.Itoa(i)
-		f, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0644)
-		if os.IsExist(err) {
-			continue
+	if err := safeWrite(filename, func(w io.Writer) error {
+		if _, err := io.Copy(w, reader); err != nil {
+			return errorx.InternalError.Wrap(err, "error on downloading blob: %s", digest)
 		}
-		if err != nil {
-			return "", errorx.InternalError.Wrap(err, "can't create temporary file: %s", tmp)
-		}
-		defer f.Close()
-		if _, err := io.Copy(f, reader); err != nil {
-			os.Remove(tmp)
-			return "", errorx.InternalError.Wrap(err, "error on downloading blob: %s", digest)
-		}
-		if err := f.Close(); err != nil {
-			os.Remove(tmp)
-			return "", errorx.InternalError.Wrap(err, "error on closing file: %s", tmp)
-		}
-		if err := os.Rename(tmp, filename); err != nil {
-			os.Remove(tmp)
-			return "", errorx.InternalError.Wrap(err, "error on rename file: %s -> %s", tmp, filename)
-		}
-		return filename, nil
+		return nil
+	}); err != nil {
+		return "", err
 	}
+	return filename, nil
 }
