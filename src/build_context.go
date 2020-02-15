@@ -23,6 +23,7 @@ import (
 
 type BuildContext struct {
 	state         *State
+	fs            *TreeNode
 	layers        []distribution.Descriptor
 	imageManifest dockerfile2llb.Image
 }
@@ -36,14 +37,17 @@ func NewBuildContext(ctx context.Context, state *State, manifest *schema2.Deseri
 	if err := json.Unmarshal(blob, &imageManifest); err != nil {
 		return nil, err
 	}
+	root := state.EmptyLayer()
 	for _, layer := range manifest.Layers {
-		_, err := state.LayerTree(ctx, layer)
+		fsdiff, err := state.LayerTree(ctx, layer)
 		if err != nil {
 			return nil, err
 		}
+		root.ApplyDiff(fsdiff)
 	}
 	return &BuildContext{
 		state:         state,
+		fs:            root,
 		layers:        manifest.Layers,
 		imageManifest: imageManifest,
 	}, nil
