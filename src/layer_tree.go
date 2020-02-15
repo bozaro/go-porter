@@ -5,11 +5,10 @@ import (
 	"compress/gzip"
 	"context"
 	"github.com/docker/distribution"
+	"github.com/docker/docker/pkg/archive"
 	"io"
 	"strings"
 )
-
-const deletePrefix = ".wh."
 
 type TreeNode struct {
 	tar.Header
@@ -111,8 +110,14 @@ func (t *TreeNode) ApplyDiff(diff *TreeNode) {
 	t.Header = diff.Header
 	if diff.Typeflag == tar.TypeDir {
 		for name, item := range diff.Child {
-			if strings.HasPrefix(name, deletePrefix) {
-				name = name[len(deletePrefix):]
+			if strings.HasPrefix(name, archive.WhiteoutMetaPrefix) {
+				if name == archive.WhiteoutOpaqueDir {
+					t.Child = nil
+				}
+				continue
+			}
+			if strings.HasPrefix(name, archive.WhiteoutPrefix) {
+				name = name[len(archive.WhiteoutPrefix):]
 				delete (t.Child, name)
 				if len(t.Child) == 0 {
 					t.Child = nil
@@ -124,8 +129,10 @@ func (t *TreeNode) ApplyDiff(diff *TreeNode) {
 				if t.Child == nil {
 					t.Child = map[string]*TreeNode{}
 				}
-				t.Child[name] = item
-				continue
+				old = &TreeNode{
+					Header:item.Header,
+					}
+				t.Child[name] = old
 			}
 			old.ApplyDiff(item)
 		}
