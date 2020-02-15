@@ -131,13 +131,15 @@ func (t *TreeNode) ApplyDiff(diff *TreeNode) {
 	if t.Typeflag != tar.TypeDir || diff.Typeflag != tar.TypeDir {
 		t.Child = nil
 	}
+	if t.Child != nil {
+		if _, ok := diff.Child[archive.WhiteoutOpaqueDir]; ok {
+			t.Child = nil
+		}
+	}
 	t.Header = diff.Header
 	if diff.Typeflag == tar.TypeDir {
 		for name, item := range diff.Child {
 			if strings.HasPrefix(name, archive.WhiteoutMetaPrefix) {
-				if name == archive.WhiteoutOpaqueDir {
-					t.Child = nil
-				}
 				continue
 			}
 			if strings.HasPrefix(name, archive.WhiteoutPrefix) {
