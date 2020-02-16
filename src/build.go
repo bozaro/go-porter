@@ -37,7 +37,7 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 		return "", err
 	}
 
-	buildContext, err := NewBuildContext(ctx, s, baseManifest)
+	buildContext, err := NewBuildContext(ctx, s, baseManifest, contextPath)
 	if err != nil {
 		return "", err
 	}

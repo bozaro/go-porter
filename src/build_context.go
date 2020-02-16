@@ -7,12 +7,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
+	"path"
 	"reflect"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema2"
 	"github.com/joomcode/errorx"
@@ -23,12 +24,13 @@ import (
 
 type BuildContext struct {
 	state         *State
-	fs            *TreeNode
+	fs            FS
+	contextPath   string
 	layers        []distribution.Descriptor
 	imageManifest dockerfile2llb.Image
 }
 
-func NewBuildContext(ctx context.Context, state *State, manifest *schema2.DeserializedManifest) (*BuildContext, error) {
+func NewBuildContext(ctx context.Context, state *State, manifest *schema2.DeserializedManifest, contextPath string) (*BuildContext, error) {
 	var imageManifest dockerfile2llb.Image
 	blob, err := state.ReadBlob(ctx, manifest.Config)
 	if err != nil {
@@ -46,8 +48,11 @@ func NewBuildContext(ctx context.Context, state *State, manifest *schema2.Deseri
 		root.ApplyDiff(fsdiff)
 	}
 	return &BuildContext{
-		state:         state,
-		fs:            root,
+		state:       state,
+		contextPath: contextPath,
+		fs: FS{
+			Base: root,
+		},
 		layers:        manifest.Layers,
 		imageManifest: imageManifest,
 	}, nil
@@ -99,8 +104,7 @@ func (b *BuildContext) ApplyCommand(cmd instructions.Command) error {
 	logrus.Infof("Apply command: %s", cmd)
 	switch cmd := cmd.(type) {
 	case *instructions.CopyCommand:
-		// TODO:
-		spew.Dump(cmd)
+		return b.applyCopyCommand(cmd)
 	case *instructions.EntrypointCommand:
 		b.applyEntrypointCommand(cmd)
 	case *instructions.EnvCommand:
@@ -310,6 +314,53 @@ func (b *BuildContext) applyEntrypointCommand(cmd *instructions.EntrypointComman
 		args = append(getShell(b.imageManifest.Config, b.imageManifest.OS), args...)
 	}
 	b.imageManifest.Config.Entrypoint = args
+}
+
+func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
+	if cmd.From != "" {
+		// TODO: Not implemented copy from other docker image
+		return errorx.NotImplemented.New(cmd.String())
+	}
+	dest := cmd.Dest()
+	if !path.IsAbs(dest) {
+		dest = path.Join("/", b.imageManifest.Config.WorkingDir, dest)
+	}
+	dest, err := b.fs.EvalSymlinks(dest)
+	if err != nil {
+		return err
+	}
+	dir := true
+	if node := b.fs.Get(dest); node != nil {
+		dir = node.Typeflag == tar.TypeDir
+	}
+	for _, source := range cmd.Sources() {
+		full := path.Join(b.contextPath, source)
+		stat, err := os.Stat(full)
+		if err != nil {
+			return err
+		}
+
+		if stat.IsDir() {
+			if !dir {
+				return errorx.IllegalState.New("target must be a directory: %s", dest)
+			}
+			// TODO:
+		} else {
+			target := dest
+			if dir {
+				target = path.Join(target, path.Base(source))
+			}
+			if err := b.addFile(target, full); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (b *BuildContext) addFile(dest string, source string) error {
+	fmt.Println(source, "->", dest)
+	return nil
 }
 
 func getShell(config dockerfile2llb.ImageConfig, os string) []string {
