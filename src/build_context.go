@@ -144,6 +144,7 @@ func (b *BuildContext) FlushDelta(ctx context.Context) error {
 	if b.fs.Delta == nil || len(b.fs.Delta.Child) == 0 {
 		return nil
 	}
+	logrus.Info("flushing layer...")
 	tempFile, err := b.writeDeltaLayer(ctx)
 	if err != nil {
 		return err
@@ -162,6 +163,8 @@ func (b *BuildContext) FlushDelta(ctx context.Context) error {
 	}
 
 	b.layers = append(b.layers, *layer)
+	b.fs.Delta = nil
+	logrus.Infof("layer flushed: %s", layer.Digest)
 	return nil
 }
 
