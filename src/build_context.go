@@ -8,8 +8,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/docker/distribution"
+	"github.com/docker/distribution/manifest/schema2"
 	"github.com/docker/distribution/uuid"
+	"github.com/joomcode/errorx"
+	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
+	"github.com/moby/buildkit/frontend/dockerfile/instructions"
 	"github.com/opencontainers/go-digest"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/build/pargzip"
 	"io"
 	"io/ioutil"
 	"os"
@@ -17,13 +24,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-
-	"github.com/docker/distribution"
-	"github.com/docker/distribution/manifest/schema2"
-	"github.com/joomcode/errorx"
-	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
-	"github.com/moby/buildkit/frontend/dockerfile/instructions"
-	"github.com/sirupsen/logrus"
 )
 
 type BuildContext struct {
@@ -118,7 +118,7 @@ func (b *BuildContext) ApplyCommand(cmd instructions.Command) error {
 	case *instructions.EnvCommand:
 		b.applyEnvCommand(cmd)
 	case *instructions.HealthCheckCommand:
-		b.imageManifest.Config.Healthcheck =  &dockerfile2llb.HealthConfig{
+		b.imageManifest.Config.Healthcheck = &dockerfile2llb.HealthConfig{
 			Test:        cmd.Health.Test,
 			Interval:    cmd.Health.Interval,
 			Timeout:     cmd.Health.Timeout,
@@ -182,8 +182,10 @@ func (b *BuildContext) compressLayer(ctx context.Context, file string) (*distrib
 	}
 	defer temp.Close()
 	defer os.Remove(tempFile)
-	w := gzip.NewWriter(temp)
-	io.Copy(w, r)
+	w := pargzip.NewWriter(temp)
+	if _, err := io.Copy(w, r); err != nil {
+		return nil, err
+	}
 	if err := w.Close(); err != nil {
 		return nil, err
 	}
