@@ -154,3 +154,60 @@ func (fs *FS) Get(target string) *TreeNode {
 	}
 	return base
 }
+
+func (fs *FS) Add(node *TreeNode) error {
+	node.Name = path.Clean(node.Name)
+	target := node.Name
+	base := fs.Base
+	delta := fs.Delta
+	beg := 0
+	if delta == nil {
+		delta = &TreeNode{
+			Header: tar.Header{
+				Typeflag: tar.TypeDir,
+			},
+		}
+		fs.Delta = delta
+	}
+	for beg < len(target) {
+		if delta.Child == nil {
+			delta.Child = make(map[string]*TreeNode)
+		}
+		end := strings.IndexByte(target[beg:], '/')
+		if end < 0 {
+			delta.Child[target[beg:]] = node
+			break
+		} else {
+			end += beg
+		}
+		name := target[beg:end]
+		if base != nil {
+			base = base.Child[name]
+			if base != nil && base.Typeflag != tar.TypeDir {
+				base = nil
+			}
+		}
+		child := delta.Child[name]
+		if child != nil && child.Typeflag != tar.TypeDir {
+			child = nil
+		}
+		if child == nil {
+			if base != nil && base.Typeflag == tar.TypeDir {
+				child = &TreeNode{
+					Header: base.Header,
+				}
+			} else {
+				child = &TreeNode{
+					Header: tar.Header{
+						Name:     target[:end],
+						Typeflag: tar.TypeDir,
+					},
+				}
+			}
+		}
+		delta.Child[name] = child
+		delta = child
+		beg = end + 1
+	}
+	return nil
+}

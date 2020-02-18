@@ -14,7 +14,8 @@ import (
 
 type TreeNode struct {
 	tar.Header
-	Child map[string]*TreeNode
+	Child  map[string]*TreeNode
+	Source string
 }
 
 func (s *State) EmptyLayer() *TreeNode {

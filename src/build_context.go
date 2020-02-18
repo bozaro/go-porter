@@ -8,10 +8,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/docker/distribution/uuid"
+	"github.com/opencontainers/go-digest"
 	"io"
+	"io/ioutil"
 	"os"
 	"path"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/docker/distribution"
@@ -59,6 +63,10 @@ func NewBuildContext(ctx context.Context, state *State, manifest *schema2.Deseri
 }
 
 func (b *BuildContext) SaveForDocker(ctx context.Context, filename string, tag string) error {
+	if err := b.FlushDelta(ctx); err != nil {
+		return nil
+	}
+
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -109,6 +117,14 @@ func (b *BuildContext) ApplyCommand(cmd instructions.Command) error {
 		b.applyEntrypointCommand(cmd)
 	case *instructions.EnvCommand:
 		b.applyEnvCommand(cmd)
+	case *instructions.HealthCheckCommand:
+		b.imageManifest.Config.Healthcheck =  &dockerfile2llb.HealthConfig{
+			Test:        cmd.Health.Test,
+			Interval:    cmd.Health.Interval,
+			Timeout:     cmd.Health.Timeout,
+			StartPeriod: cmd.Health.StartPeriod,
+			Retries:     cmd.Health.Retries,
+		}
 	case *instructions.LabelCommand:
 		if b.imageManifest.Config.Labels == nil {
 			b.imageManifest.Config.Labels = make(map[string]string)
@@ -120,6 +136,141 @@ func (b *BuildContext) ApplyCommand(cmd instructions.Command) error {
 		b.imageManifest.Config.WorkingDir = cmd.Path
 	default:
 		logrus.Errorf("Unsupported command [%s]: %s", reflect.TypeOf(cmd), cmd)
+	}
+	return nil
+}
+
+func (b *BuildContext) FlushDelta(ctx context.Context) error {
+	if b.fs.Delta == nil || len(b.fs.Delta.Child) == 0 {
+		return nil
+	}
+	tempFile, err := b.writeDeltaLayer(ctx)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tempFile)
+
+	digest, err := b.fileSHA256(ctx, tempFile)
+	if err != nil {
+		return err
+	}
+	b.imageManifest.RootFS.DiffIDs = append(b.imageManifest.RootFS.DiffIDs, digest)
+
+	layer, err := b.compressLayer(ctx, tempFile)
+	if err != nil {
+		return err
+	}
+
+	b.layers = append(b.layers, *layer)
+	return nil
+}
+
+func (b *BuildContext) compressLayer(ctx context.Context, file string) (*distribution.Descriptor, error) {
+	r, err := os.Open(file)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	tempFile := path.Join(b.state.stateDir, "~"+uuid.Generate().String()+".tar")
+	temp, err := os.Create(tempFile)
+	if err != nil {
+		return nil, err
+	}
+	defer temp.Close()
+	defer os.Remove(tempFile)
+	w := gzip.NewWriter(temp)
+	io.Copy(w, r)
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+
+	hash, err := b.fileSHA256(ctx, tempFile)
+	if err != nil {
+		return nil, err
+	}
+
+	stat, err := os.Stat(tempFile)
+	if err != nil {
+		return nil, err
+	}
+
+	desc := distribution.Descriptor{
+		MediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
+		Size:      stat.Size(),
+		Digest:    hash,
+	}
+
+	target := b.state.blobName(desc, "")
+	if err := os.Rename(tempFile, target); err != nil {
+		return nil, err
+	}
+	return &desc, nil
+}
+
+func (b *BuildContext) fileSHA256(ctx context.Context, file string) (digest.Digest, error) {
+	hash := sha256.New()
+	f, err := os.Open(file)
+	if err != nil {
+		return digest.Digest(""), err
+	}
+	defer f.Close()
+	if _, err := io.Copy(hash, f); err != nil {
+		return digest.Digest(""), err
+	}
+	return digest.NewDigest(digest.SHA256, hash), nil
+}
+
+func (b *BuildContext) writeDeltaLayer(ctx context.Context) (string, error) {
+	tempFile := path.Join(b.state.stateDir, "~"+uuid.Generate().String()+".tar")
+	f, err := os.Create(tempFile)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	t := tar.NewWriter(f)
+	if err := b.writeDir(t, b.fs.Delta); err != nil {
+		return "", err
+	}
+	if err := t.Close(); err != nil {
+		return "", err
+	}
+	return tempFile, nil
+}
+
+func (b *BuildContext) writeDir(t *tar.Writer, dir *TreeNode) error {
+	names := make([]string, 0, len(dir.Child))
+	for name := range dir.Child {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		node := dir.Child[name]
+		if err := t.WriteHeader(&node.Header); err != nil {
+			return nil
+		}
+		if node.Typeflag == tar.TypeReg {
+			if err := func() error {
+				f, err := os.Open(node.Source)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+
+				if _, err := io.Copy(t, f); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		if node.Typeflag == tar.TypeDir {
+			if err := b.writeDir(t, node); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -329,12 +480,15 @@ func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
 	if err != nil {
 		return err
 	}
-	dir := true
+	dir := strings.HasSuffix(cmd.Dest(), "/")
 	if node := b.fs.Get(dest); node != nil {
 		dir = node.Typeflag == tar.TypeDir
 	}
 	for _, source := range cmd.Sources() {
-		full := path.Join(b.contextPath, source)
+		full := source
+		if !path.IsAbs(full) {
+			full = path.Join(b.contextPath, full)
+		}
 		stat, err := os.Stat(full)
 		if err != nil {
 			return err
@@ -344,7 +498,27 @@ func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
 			if !dir {
 				return errorx.IllegalState.New("target must be a directory: %s", dest)
 			}
-			// TODO:
+			queue := make([]string, 0, 100)
+			queue = append(queue, "")
+			next := make([]string, 0, 100)
+			for _, dir := range queue {
+				files, err := ioutil.ReadDir(path.Join(full, dir))
+				if err != nil {
+					return err
+				}
+				for _, file := range files {
+					if file.IsDir() {
+						next = append(next, path.Join(dir, file.Name()))
+						if err := b.addDir(path.Join(dest, dir, file.Name()), file); err != nil {
+							return err
+						}
+						continue
+					}
+					if err := b.addFile(path.Join(dest, dir, file.Name()), path.Join(full, dir, file.Name())); err != nil {
+						return err
+					}
+				}
+			}
 		} else {
 			target := dest
 			if dir {
@@ -358,9 +532,30 @@ func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
 	return nil
 }
 
+func (b *BuildContext) addDir(dest string, info os.FileInfo) error {
+	return b.fs.Add(&TreeNode{
+		Header: tar.Header{
+			Name:     dest,
+			Typeflag: tar.TypeDir,
+		},
+	})
+}
+
 func (b *BuildContext) addFile(dest string, source string) error {
+	stat, err := os.Stat(source)
+	if err != nil {
+		return err
+	}
 	fmt.Println(source, "->", dest)
-	return nil
+	return b.fs.Add(&TreeNode{
+		Header: tar.Header{
+			Name:     dest,
+			Typeflag: tar.TypeReg,
+			Size:     stat.Size(),
+			Mode:     int64(stat.Mode()),
+		},
+		Source: source,
+	})
 }
 
 func getShell(config dockerfile2llb.ImageConfig, os string) []string {
