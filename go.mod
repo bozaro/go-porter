@@ -9,6 +9,7 @@ require (
 	github.com/google/go-cmp v0.4.0 // indirect
 	github.com/heroku/docker-registry-client v0.0.0-20190909225348-afc9e1acc3d5
 	github.com/joomcode/errorx v1.0.0
+	github.com/klauspost/compress v1.4.1
 	github.com/labstack/gommon v0.3.0 // indirect
 	github.com/mattn/go-colorable v0.1.4 // indirect
 	github.com/mattn/go-isatty v0.0.12 // indirect

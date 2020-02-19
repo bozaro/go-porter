@@ -2,7 +2,6 @@ package src
 
 import (
 	"archive/tar"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,7 +10,9 @@ import (
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema2"
 	"github.com/docker/distribution/uuid"
+	"github.com/docker/go-units"
 	"github.com/joomcode/errorx"
+	"github.com/klauspost/compress/gzip"
 	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
 	"github.com/moby/buildkit/frontend/dockerfile/instructions"
 	"github.com/opencontainers/go-digest"
@@ -154,8 +155,7 @@ func (b *BuildContext) FlushDelta(ctx context.Context) error {
 	b.imageManifest.RootFS.DiffIDs = append(b.imageManifest.RootFS.DiffIDs, digest)
 	b.layers = append(b.layers, *layer)
 	b.fs.Delta = nil
-	logrus.Infof("layer flushed: %s", layer.Digest)
-	logrus.Infof("time: %v", time.Now().Sub(t))
+	logrus.Infof("layer flushed: %s, %s, %v", layer.Digest, units.HumanSize(float64(layer.Size)), time.Now().Sub(t))
 	return nil
 }
 
@@ -185,7 +185,7 @@ func (b *BuildContext) writeDeltaLayer(ctx context.Context) (digest.Digest, *dis
 	}
 	defer f.Close()
 
-	gz, err := gzip.NewWriterLevel(io.MultiWriter(f, hashGz), gzip.BestSpeed)
+	gz, err := gzip.NewWriterLevel(io.MultiWriter(f, hashGz), gzip.DefaultCompression)
 	if err != nil {
 		return "", nil, err
 	}
