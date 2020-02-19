@@ -16,7 +16,6 @@ import (
 	"github.com/moby/buildkit/frontend/dockerfile/instructions"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/build/pargzip"
 	"io"
 	"io/ioutil"
 	"os"
@@ -24,6 +23,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 )
 
 type BuildContext struct {
@@ -144,73 +144,19 @@ func (b *BuildContext) FlushDelta(ctx context.Context) error {
 	if b.fs.Delta == nil || len(b.fs.Delta.Child) == 0 {
 		return nil
 	}
+	t := time.Now()
 	logrus.Info("flushing layer...")
-	tempFile, err := b.writeDeltaLayer(ctx)
+	digest, layer, err := b.writeDeltaLayer(ctx)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tempFile)
 
-	digest, err := b.fileSHA256(ctx, tempFile)
-	if err != nil {
-		return err
-	}
 	b.imageManifest.RootFS.DiffIDs = append(b.imageManifest.RootFS.DiffIDs, digest)
-
-	layer, err := b.compressLayer(ctx, tempFile)
-	if err != nil {
-		return err
-	}
-
 	b.layers = append(b.layers, *layer)
 	b.fs.Delta = nil
 	logrus.Infof("layer flushed: %s", layer.Digest)
+	logrus.Infof("time: %v", time.Now().Sub(t))
 	return nil
-}
-
-func (b *BuildContext) compressLayer(ctx context.Context, file string) (*distribution.Descriptor, error) {
-	r, err := os.Open(file)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-
-	tempFile := path.Join(b.state.stateDir, "~"+uuid.Generate().String()+".tar")
-	temp, err := os.Create(tempFile)
-	if err != nil {
-		return nil, err
-	}
-	defer temp.Close()
-	defer os.Remove(tempFile)
-	w := pargzip.NewWriter(temp)
-	if _, err := io.Copy(w, r); err != nil {
-		return nil, err
-	}
-	if err := w.Close(); err != nil {
-		return nil, err
-	}
-
-	hash, err := b.fileSHA256(ctx, tempFile)
-	if err != nil {
-		return nil, err
-	}
-
-	stat, err := os.Stat(tempFile)
-	if err != nil {
-		return nil, err
-	}
-
-	desc := distribution.Descriptor{
-		MediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
-		Size:      stat.Size(),
-		Digest:    hash,
-	}
-
-	target := b.state.blobName(desc, "")
-	if err := os.Rename(tempFile, target); err != nil {
-		return nil, err
-	}
-	return &desc, nil
 }
 
 func (b *BuildContext) fileSHA256(ctx context.Context, file string) (digest.Digest, error) {
@@ -226,22 +172,51 @@ func (b *BuildContext) fileSHA256(ctx context.Context, file string) (digest.Dige
 	return digest.NewDigest(digest.SHA256, hash), nil
 }
 
-func (b *BuildContext) writeDeltaLayer(ctx context.Context) (string, error) {
-	tempFile := path.Join(b.state.stateDir, "~"+uuid.Generate().String()+".tar")
+func (b *BuildContext) writeDeltaLayer(ctx context.Context) (digest.Digest, *distribution.Descriptor, error) {
+	tempFile := path.Join(b.state.stateDir, "~"+uuid.Generate().String()+".tar.gz")
+	hashTr := sha256.New()
+	hashGz := sha256.New()
+
+	defer os.Remove(tempFile)
+
 	f, err := os.Create(tempFile)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer f.Close()
 
-	t := tar.NewWriter(f)
+	gz, err := gzip.NewWriterLevel(io.MultiWriter(f, hashGz), gzip.BestSpeed)
+	if err != nil {
+		return "", nil, err
+	}
+
+	t := tar.NewWriter(io.MultiWriter(gz, hashTr))
 	if err := b.writeDir(t, b.fs.Delta); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if err := t.Close(); err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return tempFile, nil
+	if err := gz.Close(); err != nil {
+		return "", nil, err
+	}
+	size, err := f.Seek(0, 1)
+	if err != nil {
+		return "", nil, err
+	}
+
+	desc := distribution.Descriptor{
+		MediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
+		Size:      size,
+		Digest:    digest.NewDigestFromBytes(digest.SHA256, hashGz.Sum(nil)),
+	}
+	target := b.state.blobName(desc, "")
+	_ = os.MkdirAll(path.Dir(target), 0755)
+	if err := os.Rename(tempFile, target); err != nil {
+		return "", nil, err
+	}
+
+	return digest.NewDigestFromBytes(digest.SHA256, hashTr.Sum(nil)), &desc, nil
 }
 
 func (b *BuildContext) writeDir(t *tar.Writer, dir *TreeNode) error {
