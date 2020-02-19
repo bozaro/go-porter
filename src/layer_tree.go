@@ -22,6 +22,7 @@ func (s *State) EmptyLayer() *TreeNode {
 	return &TreeNode{
 		Header: tar.Header{
 			Typeflag: tar.TypeDir,
+			Mode: 0755,
 		},
 	}
 }
@@ -113,8 +114,8 @@ func (t *TreeNode) Add(tarItem *tar.Header) {
 		if item == nil {
 			item = &TreeNode{
 				Header: tar.Header{
-					Mode:     0755,
 					Typeflag: tar.TypeDir,
+					Mode:     0755,
 				},
 			}
 		}

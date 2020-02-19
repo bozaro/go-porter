@@ -22,7 +22,9 @@ import (
 	"os"
 	"path"
 	"reflect"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -34,6 +36,8 @@ type BuildContext struct {
 	layers        []distribution.Descriptor
 	imageManifest dockerfile2llb.Image
 }
+
+type FileFilter func(header *tar.Header)
 
 func NewBuildContext(ctx context.Context, state *State, manifest *schema2.DeserializedManifest, contextPath string) (*BuildContext, error) {
 	var imageManifest dockerfile2llb.Image
@@ -266,8 +270,8 @@ func (b *BuildContext) writeImageManifest(ctx context.Context, w *tar.Writer) (s
 	if err := w.WriteHeader(&tar.Header{
 		Name:     hash + ".json",
 		Size:     int64(len(data)),
-		Mode:     0644,
 		Typeflag: tar.TypeReg,
+		Mode:     0644,
 	}); err != nil {
 		return "", err
 	}
@@ -306,9 +310,10 @@ func (b *BuildContext) writeManifest(ctx context.Context, w *tar.Writer, tag str
 	}
 
 	if err := w.WriteHeader(&tar.Header{
-		Name: "manifest.json",
-		Size: int64(len(data)),
-		Mode: 0644,
+		Name:     "manifest.json",
+		Size:     int64(len(data)),
+		Typeflag: tar.TypeReg,
+		Mode:     0644,
 	}); err != nil {
 		return err
 	}
@@ -350,8 +355,8 @@ func (b *BuildContext) writeLayer(ctx context.Context, w *tar.Writer, layer dist
 	if err := w.WriteHeader(&tar.Header{
 		Name:     hash + "/",
 		Size:     size,
-		Mode:     0755,
 		Typeflag: tar.TypeDir,
+		Mode:     0755,
 	}); err != nil {
 		return "", err
 	}
@@ -359,8 +364,8 @@ func (b *BuildContext) writeLayer(ctx context.Context, w *tar.Writer, layer dist
 	if err := w.WriteHeader(&tar.Header{
 		Name:     hash + "/layer.tar",
 		Size:     size,
-		Mode:     0644,
 		Typeflag: tar.TypeReg,
+		Mode:     0644,
 	}); err != nil {
 		return "", err
 	}
@@ -464,6 +469,21 @@ func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
 	if node := b.fs.Get(dest); node != nil {
 		dir = node.Typeflag == tar.TypeDir
 	}
+
+	var filter FileFilter
+	if cmd.Chown != "" {
+		m := regexp.MustCompile(`^(\d+):(\d+)$`).FindStringSubmatch(cmd.Chown)
+		if len(m) == 0 {
+			return errorx.IllegalArgument.New("illegal chown: %s", cmd.Chown)
+		}
+		uid, _ := strconv.Atoi(m[1])
+		gid, _ := strconv.Atoi(m[2])
+		filter = func(header *tar.Header) {
+			header.Uid = uid
+			header.Gid = gid
+		}
+	}
+
 	for _, source := range cmd.Sources() {
 		full := source
 		if !path.IsAbs(full) {
@@ -481,6 +501,9 @@ func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
 			queue := make([]string, 0, 100)
 			queue = append(queue, "")
 			next := make([]string, 0, 100)
+			if err := b.addDir(dest, nil, filter); err != nil {
+				return err
+			}
 			for _, dir := range queue {
 				files, err := ioutil.ReadDir(path.Join(full, dir))
 				if err != nil {
@@ -489,12 +512,12 @@ func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
 				for _, file := range files {
 					if file.IsDir() {
 						next = append(next, path.Join(dir, file.Name()))
-						if err := b.addDir(path.Join(dest, dir, file.Name()), file); err != nil {
+						if err := b.addDir(path.Join(dest, dir, file.Name()), file, filter); err != nil {
 							return err
 						}
 						continue
 					}
-					if err := b.addFile(path.Join(dest, dir, file.Name()), path.Join(full, dir, file.Name())); err != nil {
+					if err := b.addFile(path.Join(dest, dir, file.Name()), path.Join(full, dir, file.Name()), filter); err != nil {
 						return err
 					}
 				}
@@ -512,28 +535,45 @@ func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
 	return nil
 }
 
-func (b *BuildContext) addDir(dest string, info os.FileInfo) error {
+func (b *BuildContext) addDir(dest string, info os.FileInfo, filters ...FileFilter) error {
+	var mode os.FileMode = 0755
+	if info != nil {
+		mode = info.Mode()
+	}
+	header := tar.Header{
+		Name:     dest,
+		Typeflag: tar.TypeDir,
+		Mode:     int64(mode),
+	}
+	for _, filter := range filters {
+		if filter != nil {
+			filter(&header)
+		}
+	}
 	return b.fs.Add(&TreeNode{
-		Header: tar.Header{
-			Name:     dest,
-			Typeflag: tar.TypeDir,
-		},
+		Header: header,
 	})
 }
 
-func (b *BuildContext) addFile(dest string, source string) error {
+func (b *BuildContext) addFile(dest string, source string, filters ...FileFilter) error {
 	stat, err := os.Stat(source)
 	if err != nil {
 		return err
 	}
 	fmt.Println(source, "->", dest)
+	header := tar.Header{
+		Name:     dest,
+		Typeflag: tar.TypeReg,
+		Size:     stat.Size(),
+		Mode:     int64(stat.Mode()),
+	}
+	for _, filter := range filters {
+		if filter != nil {
+			filter(&header)
+		}
+	}
 	return b.fs.Add(&TreeNode{
-		Header: tar.Header{
-			Name:     dest,
-			Typeflag: tar.TypeReg,
-			Size:     stat.Size(),
-			Mode:     int64(stat.Mode()),
-		},
+		Header: header,
 		Source: source,
 	})
 }

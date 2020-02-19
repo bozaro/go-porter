@@ -165,6 +165,7 @@ func (fs *FS) Add(node *TreeNode) error {
 		delta = &TreeNode{
 			Header: tar.Header{
 				Typeflag: tar.TypeDir,
+				Mode:     0755,
 			},
 		}
 		fs.Delta = delta
@@ -201,6 +202,7 @@ func (fs *FS) Add(node *TreeNode) error {
 					Header: tar.Header{
 						Name:     target[:end],
 						Typeflag: tar.TypeDir,
+						Mode : 0755,
 					},
 				}
 			}
