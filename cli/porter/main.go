@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/joomcode/go-porter/src"
+	"github.com/joomcode/errorx"
 	"github.com/mkideal/cli"
 )
 
@@ -31,6 +32,11 @@ type cmdBuildT struct {
 	Dockerfile string `cli:"f,file" usage:"Name of the Dockerfile"`
 	Tag        string `cli:"*t,tag" usage:"Name and optionally a tag in the 'name:tag' format"`
 	Target     string `cli:"target" usage:"Set the target build stage to build"`
+}
+
+type cmdSaveT struct {
+	CmdRootT
+	Output string `cli:"o,output" usage:"Write to a file, instead of STDOUT"`
 }
 
 var root = &cli.Command{
@@ -87,7 +93,11 @@ var cmdPull = &cli.Command{
 			return err
 		}
 		for _, imageName := range c.Args() {
-			if _, err := state.Pull(ctx, imageName, argv.Cache); err != nil {
+			image, err := state.ResolveImage(imageName)
+			if err != nil {
+				return err
+			}
+			if _, err := state.Pull(ctx, image, argv.Cache); err != nil {
 				return err
 			}
 		}
@@ -121,10 +131,47 @@ var cmdBuild = &cli.Command{
 	},
 }
 
+var cmdSave = &cli.Command{
+	Name: "save",
+	Desc: "Save one or more images to a tar archive (streamed to STDOUT by default)",
+	Argv: func() interface{} {
+		return &cmdSaveT{
+			CmdRootT: newCmdRoot(),
+		}
+	},
+	NumArg:      cli.AtLeast(1),
+	CanSubRoute: true,
+	Fn: func(c *cli.Context) error {
+		argv := c.Argv().(*cmdSaveT)
+		ctx := context.Background()
+		state, err := src.NewState(argv)
+		if err != nil {
+			return err
+		}
+		w := os.Stdout
+		if argv.Output != "" {
+			f, err := os.Create(argv.Output)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			w = f
+		}
+		if w == nil {
+			return errorx.IllegalArgument.New("stdout is not exists")
+		}
+		if err := state.Save(ctx, w, c.Args()...); err != nil {
+			return err
+		}
+		return nil
+	},
+}
+
 func main() {
 	if err := cli.Root(root,
 		cli.Tree(cmdPull),
 		cli.Tree(cmdBuild),
+		cli.Tree(cmdSave),
 	).Run(os.Args[1:]); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

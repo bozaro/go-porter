@@ -2,7 +2,6 @@ package src
 
 import (
 	"context"
-	"github.com/sirupsen/logrus"
 	"os"
 	"path"
 
@@ -34,7 +33,12 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 		return "", err
 	}
 
-	baseManifest, err := s.Pull(ctx, stage.BaseName, true)
+	baseImage, err := s.ResolveImage(stage.BaseName)
+	if err != nil {
+		return "", err
+	}
+
+	baseManifest, err := s.Pull(ctx, baseImage, true)
 	if err != nil {
 		return "", err
 	}
@@ -63,12 +67,6 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 			return "", err
 		}
 	}
-	logrus.Info("save for docker")
-	if err := buildContext.SaveForDocker(ctx, "saved.tar", "test:latest"); err != nil {
-		return "", err
-	}
-
-	logrus.Info("done")
 	return "", nil
 }
 

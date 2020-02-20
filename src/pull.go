@@ -15,21 +15,16 @@ import (
 
 var bucketManifest = []byte("manifest.v2")
 
-func (s *State) Pull(ctx context.Context, imageName string, allowCached bool) (*schema2.DeserializedManifest, error) {
-	info, err := s.ResolveImage(imageName)
+func (s *State) Pull(ctx context.Context, image *ImageInfo, allowCached bool) (*schema2.DeserializedManifest, error) {
+	manifest, err := s.Manifest(ctx, image, allowCached)
 	if err != nil {
 		return nil, err
 	}
-
-	manifest, err := s.Manifest(ctx, info, allowCached)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := s.DownloadBlob(ctx, info, manifest.Config); err != nil {
+	if _, err := s.DownloadBlob(ctx, image, manifest.Config); err != nil {
 		return nil, err
 	}
 	for _, layer := range manifest.Layers {
-		_, err := s.DownloadBlob(ctx, info, layer)
+		_, err := s.DownloadBlob(ctx, image, layer)
 		if err != nil {
 			return nil, err
 		}
@@ -102,6 +97,8 @@ func (s *State) mediaTypeSuffix(mediaType string) string {
 	switch mediaType {
 	case "application/vnd.docker.container.image.v1+json":
 		return ".json"
+	case "application/vnd.docker.image.rootfs.diff.tar":
+		return ".tar"
 	case "application/vnd.docker.image.rootfs.diff.tar.gzip":
 		return ".tar.gz"
 	default:
