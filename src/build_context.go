@@ -67,6 +67,22 @@ func NewBuildContext(ctx context.Context, state *State, manifest *schema2.Deseri
 	}, nil
 }
 
+func (b *BuildContext) BuildManifest(ctx context.Context) (*schema2.DeserializedManifest, error) {
+	if err := b.FlushDelta(ctx); err != nil {
+		return nil, err
+	}
+
+	descriptor, err := b.SaveImageManifest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return schema2.FromStruct(schema2.Manifest{
+		Versioned: schema2.SchemaVersion,
+		Config:    *descriptor,
+		Layers:    b.layers,
+	})
+}
+
 func (b *BuildContext) SaveForDocker(ctx context.Context, filename string, tag string) error {
 	if err := b.FlushDelta(ctx); err != nil {
 		return nil
@@ -257,6 +273,29 @@ func (b *BuildContext) writeDir(t *tar.Writer, dir *TreeNode) error {
 		}
 	}
 	return nil
+}
+
+func (b *BuildContext) SaveImageManifest(ctx context.Context) (*distribution.Descriptor, error) {
+	data, err := json.Marshal(b.imageManifest)
+	if err != nil {
+		return nil, err
+	}
+	sum256 := sha256.Sum256(data)
+	descriptor := distribution.Descriptor{
+		MediaType: "application/vnd.docker.container.image.v1+json",
+		Size:      int64(len(data)),
+		Digest:    digest.NewDigestFromBytes(digest.SHA256, sum256 [:]),
+	}
+	filename := b.state.blobName(descriptor, "")
+
+	if err := safeWrite(filename, func(w io.Writer) error {
+		_, err := w.Write(data)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+
+	return &descriptor, nil
 }
 
 func (b *BuildContext) writeImageManifest(ctx context.Context, w *tar.Writer) (string, error) {

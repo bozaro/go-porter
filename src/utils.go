@@ -4,10 +4,18 @@ import (
 	"github.com/joomcode/errorx"
 	"io"
 	"os"
+	"path"
 	"strconv"
 )
 
 func safeWrite(filename string, task func(w io.Writer) error) error {
+	if dir := path.Dir(filename); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			if !os.IsExist(err) {
+				return err
+			}
+		}
+	}
 	for i := 0; ; i++ {
 		tmp := filename + "~" + strconv.Itoa(i)
 		f, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0644)

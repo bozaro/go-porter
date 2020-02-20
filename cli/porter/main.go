@@ -23,13 +23,13 @@ func (c CmdRootT) GetStateDir() string {
 
 type cmdPullT struct {
 	CmdRootT
-	Target string `cli:"t,target" usage:"Target directory"`
-	Cache  bool   `cli:"cache" usage:"Don't refresh cached manifest files'"`
+	Cache bool `cli:"cache" usage:"Don't refresh cached manifest files'"`
 }
 
 type cmdBuildT struct {
 	CmdRootT
 	Dockerfile string `cli:"f,file" usage:"Name of the Dockerfile"`
+	Tag        string `cli:"*t,tag" usage:"Name and optionally a tag in the 'name:tag' format"`
 	Target     string `cli:"target" usage:"Set the target build stage to build"`
 }
 
@@ -49,6 +49,10 @@ func (c cmdBuildT) GetDockerfile() string {
 
 func (c cmdBuildT) GetTarget() string {
 	return c.Target
+}
+
+func (c cmdBuildT) GetTag() string {
+	return c.Tag
 }
 
 func newCmdRoot() CmdRootT {

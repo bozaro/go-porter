@@ -66,20 +66,27 @@ func (s *State) Manifest(ctx context.Context, imageInfo *ImageInfo, allowCached 
 	if err != nil {
 		return nil, err
 	}
-	cached, err = manifest.MarshalJSON()
-	if err != nil {
+	if err := s.SaveManifest(ctx,manifest, imageInfo.Reference); err != nil {
 		return nil, err
+	}
+	return manifest, nil
+}
+
+func (s *State) SaveManifest(ctx context.Context, manifest *schema2.DeserializedManifest, reference string) error {
+	cached, err := manifest.MarshalJSON()
+	if err != nil {
+		return   err
 	}
 	if err := s.db.Update(func(tx *bolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists(bucketManifest)
 		if err != nil {
 			return err
 		}
-		return b.Put([]byte(imageInfo.Name), cached)
+		return b.Put([]byte(reference), cached)
 	}); err != nil {
-		return nil, err
+		return   err
 	}
-	return manifest, err
+	return   err
 }
 
 func (s *State) blobName(blob distribution.Descriptor, suffix string) string {

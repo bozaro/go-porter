@@ -15,6 +15,7 @@ import (
 type BuildArgs interface {
 	GetDockerfile() string
 	GetTarget() string
+	GetTag() string
 }
 
 func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (digest.Digest, error) {
@@ -49,6 +50,19 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 		}
 	}
 
+	if tag := args.GetTag(); tag != "" {
+		info, err := s.ResolveImage(tag)
+		if err != nil {
+			return "", err
+		}
+		manifest, err := buildContext.BuildManifest(ctx)
+		if err != nil {
+			return "", err
+		}
+		if err := s.SaveManifest(ctx, manifest, info.Name); err != nil {
+			return "", err
+		}
+	}
 	logrus.Info("save for docker")
 	if err := buildContext.SaveForDocker(ctx, "saved.tar", "test:latest"); err != nil {
 		return "", err
