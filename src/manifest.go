@@ -3,12 +3,12 @@ package src
 import (
 	"encoding/json"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/joomcode/errorx"
-	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
 )
 
 type DeserializedImageManifest struct {
-	dockerfile2llb.Image
+	v1.ConfigFile
 	canonical [] byte
 }
 
@@ -19,12 +19,12 @@ func (m *DeserializedImageManifest) UnmarshalJSON(b []byte) error {
 	copy(m.canonical, b)
 
 	// Unmarshal canonical JSON into Manifest object
-	var manifest dockerfile2llb.Image
+	var manifest v1.ConfigFile
 	if err := json.Unmarshal(m.canonical, &manifest); err != nil {
 		return err
 	}
 
-	m.Image = manifest
+	m.ConfigFile = manifest
 	return nil
 }
 

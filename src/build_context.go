@@ -21,26 +21,26 @@ import (
 	"github.com/docker/distribution/manifest/schema2"
 	"github.com/docker/distribution/uuid"
 	"github.com/docker/go-units"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/joomcode/errorx"
 	"github.com/klauspost/compress/gzip"
-	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
 	"github.com/moby/buildkit/frontend/dockerfile/instructions"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 )
 
 type BuildContext struct {
-	state         *State
-	fs            FS
-	contextPath   string
-	layers        []distribution.Descriptor
-	imageManifest dockerfile2llb.Image
+	state       *State
+	fs          FS
+	contextPath string
+	layers      []distribution.Descriptor
+	configFile  v1.ConfigFile
 }
 
 type FileFilter func(header *tar.Header)
 
 func NewBuildContext(ctx context.Context, state *State, manifest *schema2.DeserializedManifest, contextPath string) (*BuildContext, error) {
-	var imageManifest dockerfile2llb.Image
+	var imageManifest v1.ConfigFile
 	blob, err := state.ReadBlob(ctx, manifest.Config)
 	if err != nil {
 		return nil, err
@@ -62,8 +62,8 @@ func NewBuildContext(ctx context.Context, state *State, manifest *schema2.Deseri
 		fs: FS{
 			Base: root,
 		},
-		layers:        manifest.Layers,
-		imageManifest: imageManifest,
+		layers:     manifest.Layers,
+		configFile: imageManifest,
 	}, nil
 }
 
@@ -93,7 +93,7 @@ func (b *BuildContext) ApplyCommand(cmd instructions.Command) error {
 	case *instructions.EnvCommand:
 		b.applyEnvCommand(cmd)
 	case *instructions.HealthCheckCommand:
-		b.imageManifest.Config.Healthcheck = &dockerfile2llb.HealthConfig{
+		b.configFile.Config.Healthcheck = &v1.HealthConfig{
 			Test:        cmd.Health.Test,
 			Interval:    cmd.Health.Interval,
 			Timeout:     cmd.Health.Timeout,
@@ -101,14 +101,14 @@ func (b *BuildContext) ApplyCommand(cmd instructions.Command) error {
 			Retries:     cmd.Health.Retries,
 		}
 	case *instructions.LabelCommand:
-		if b.imageManifest.Config.Labels == nil {
-			b.imageManifest.Config.Labels = make(map[string]string)
+		if b.configFile.Config.Labels == nil {
+			b.configFile.Config.Labels = make(map[string]string)
 		}
 		for _, pair := range cmd.Labels {
-			b.imageManifest.Config.Labels[pair.Key] = pair.Value
+			b.configFile.Config.Labels[pair.Key] = pair.Value
 		}
 	case *instructions.WorkdirCommand:
-		b.imageManifest.Config.WorkingDir = cmd.Path
+		b.configFile.Config.WorkingDir = cmd.Path
 	default:
 		logrus.Errorf("Unsupported command [%s]: %s", reflect.TypeOf(cmd), cmd)
 	}
@@ -126,7 +126,11 @@ func (b *BuildContext) FlushDelta(ctx context.Context) error {
 		return err
 	}
 
-	b.imageManifest.RootFS.DiffIDs = append(b.imageManifest.RootFS.DiffIDs, digest)
+	hash, err := v1.NewHash(digest.String())
+	if err != nil {
+		return err
+	}
+	b.configFile.RootFS.DiffIDs = append(b.configFile.RootFS.DiffIDs, hash)
 	b.layers = append(b.layers, *layer)
 	b.fs.Delta = nil
 	logrus.Infof("layer flushed: %s, %s, %v", layer.Digest, units.HumanSize(float64(layer.Size)), time.Now().Sub(t))
@@ -230,7 +234,7 @@ func (b *BuildContext) writeDir(t *tar.Writer, dir *TreeNode) error {
 }
 
 func (b *BuildContext) SaveImageManifest(ctx context.Context) (*distribution.Descriptor, error) {
-	data, err := json.Marshal(b.imageManifest)
+	data, err := json.Marshal(b.configFile)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +261,7 @@ func (b *BuildContext) applyEnvCommand(cmd *instructions.EnvCommand) {
 	for _, pair := range cmd.Env {
 		keys[pair.Key] = struct{}{}
 	}
-	config := &b.imageManifest.Config
+	config := &b.configFile.Config
 	result := make([]string, 0, len(config.Env)+len(cmd.Env))
 	for _, env := range config.Env {
 		key := strings.Split(env, "=")[0]
@@ -275,9 +279,9 @@ func (b *BuildContext) applyEnvCommand(cmd *instructions.EnvCommand) {
 func (b *BuildContext) applyEntrypointCommand(cmd *instructions.EntrypointCommand) {
 	var args []string = cmd.CmdLine
 	if cmd.PrependShell {
-		args = append(getShell(b.imageManifest.Config, b.imageManifest.OS), args...)
+		args = append(getShell(b.configFile.Config, b.configFile.OS), args...)
 	}
-	b.imageManifest.Config.Entrypoint = args
+	b.configFile.Config.Entrypoint = args
 }
 
 func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
@@ -287,7 +291,7 @@ func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
 	}
 	dest := cmd.Dest()
 	if !path.IsAbs(dest) {
-		dest = path.Join("/", b.imageManifest.Config.WorkingDir, dest)
+		dest = path.Join("/", b.configFile.Config.WorkingDir, dest)
 	}
 	dest, err := b.fs.EvalSymlinks(dest)
 	if err != nil {
@@ -406,7 +410,7 @@ func (b *BuildContext) addFile(dest string, source string, filters ...FileFilter
 	})
 }
 
-func getShell(config dockerfile2llb.ImageConfig, os string) []string {
+func getShell(config v1.Config, os string) []string {
 	if len(config.Shell) == 0 {
 		return append([]string{}, defaultShellForOS(os)[:]...)
 	}

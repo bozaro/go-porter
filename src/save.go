@@ -13,6 +13,7 @@ import (
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema2"
 	"github.com/docker/distribution/uuid"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/joomcode/errorx"
 	"github.com/klauspost/compress/gzip"
 	"github.com/opencontainers/go-digest"
@@ -35,9 +36,12 @@ func (s *State) Save(ctx context.Context, w io.Writer, images ...string) error {
 	// Get manifests
 	manifests := make([]*schema2.DeserializedManifest, 0, len(infos))
 	for _, info := range infos {
-		manifest, err := s.Pull(ctx, info, true)
+		manifest, err := s.LoadManifest(ctx, info)
 		if err != nil {
 			return err
+		}
+		if manifest == nil {
+			return errorx.IllegalArgument.New("can't find manifest for tag: %s", info.Name)
 		}
 		manifests = append(manifests, manifest)
 
@@ -88,7 +92,7 @@ func (s *State) writeExportManifest(ctx context.Context, w *tar.Writer, tags map
 			}
 			layers := make([]string, 0, len(config.RootFS.DiffIDs))
 			for _, layer := range config.RootFS.DiffIDs {
-				layers = append(layers, layer.Hex()+"/layer.tar")
+				layers = append(layers, layer.Hex+"/layer.tar")
 			}
 			exportImage = &manifestItem{
 				Config: hash.Hex() + ".json",
@@ -132,19 +136,23 @@ func (s *State) writeLayers(ctx context.Context, w *tar.Writer, manifests ...*sc
 	}
 
 	// Unpack layers
-	layers := map[digest.Digest]distribution.Descriptor{}
+	layers := map[v1.Hash]distribution.Descriptor{}
 	for _, manifest := range manifests {
 		for _, layer := range manifest.Layers {
 			unpacked, err := s.UnpackedLayer(ctx, layer)
 			if err != nil {
 				return nil, err
 			}
-			layers[unpacked.Digest] = *unpacked
+			hash, err := v1.NewHash(unpacked.Digest.String())
+			if err != nil {
+				return nil, err
+			}
+			layers[hash] = *unpacked
 		}
 	}
 
-	need := map[digest.Digest]struct{}{}
-	var queue []digest.Digest
+	need := map[v1.Hash]struct{}{}
+	var queue []v1.Hash
 	for _, manifest := range configs {
 		for _, layer := range manifest.RootFS.DiffIDs {
 			if _, ok := need[layer]; ok {
@@ -155,7 +163,7 @@ func (s *State) writeLayers(ctx context.Context, w *tar.Writer, manifests ...*sc
 		}
 	}
 	sort.Slice(queue, func(i, j int) bool {
-		return queue[i] < queue[j]
+		return queue[i].String() < queue[j].String()
 	})
 	for _, layer := range queue {
 		unpacked, ok := layers[ layer]

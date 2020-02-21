@@ -39,6 +39,14 @@ type cmdSaveT struct {
 	Output string `cli:"o,output" usage:"Write to a file, instead of STDOUT"`
 }
 
+type cmdPushT struct {
+	CmdRootT
+}
+
+type cmdTagT struct {
+	CmdRootT
+}
+
 var root = &cli.Command{
 	Desc: "https://github.com/joomcode/go-porter",
 	Argv: func() interface{} { return new(CmdRootT) },
@@ -92,6 +100,8 @@ var cmdPull = &cli.Command{
 		if err != nil {
 			return err
 		}
+		defer state.Close()
+
 		for _, imageName := range c.Args() {
 			image, err := state.ResolveImage(imageName)
 			if err != nil {
@@ -122,6 +132,8 @@ var cmdBuild = &cli.Command{
 		if err != nil {
 			return err
 		}
+		defer state.Close()
+
 		digest, err := state.Build(ctx, argv, c.Args()[0])
 		if err != nil {
 			return err
@@ -148,6 +160,8 @@ var cmdSave = &cli.Command{
 		if err != nil {
 			return err
 		}
+		defer state.Close()
+
 		w := os.Stdout
 		if argv.Output != "" {
 			f, err := os.Create(argv.Output)
@@ -167,11 +181,65 @@ var cmdSave = &cli.Command{
 	},
 }
 
+var cmdPush = &cli.Command{
+	Name: "push",
+	Desc: "Push one or more images to a registry",
+	Argv: func() interface{} {
+		return &cmdPushT{
+			CmdRootT: newCmdRoot(),
+		}
+	},
+	NumArg:      cli.AtLeast(1),
+	CanSubRoute: true,
+	Fn: func(c *cli.Context) error {
+		argv := c.Argv().(*cmdPushT)
+		ctx := context.Background()
+		state, err := src.NewState(argv)
+		if err != nil {
+			return err
+		}
+		defer state.Close()
+
+		if err := state.Push(ctx, c.Args()...); err != nil {
+			return err
+		}
+		return nil
+	},
+}
+
+var cmdTag = &cli.Command{
+	Name: "tag",
+	Desc: "Create a tag TARGET_IMAGE that refers to SOURCE_IMAGE",
+	Argv: func() interface{} {
+		return &cmdTagT{
+			CmdRootT: newCmdRoot(),
+		}
+	},
+	NumArg:      cli.ExactN(2),
+	CanSubRoute: true,
+	Fn: func(c *cli.Context) error {
+		argv := c.Argv().(*cmdTagT)
+		ctx := context.Background()
+		state, err := src.NewState(argv)
+		if err != nil {
+			return err
+		}
+		defer state.Close()
+
+		if err := state.Tag(ctx, c.Args()[0], c.Args()[1]); err != nil {
+			return err
+		}
+		return nil
+	},
+}
+
 func main() {
 	if err := cli.Root(root,
-		cli.Tree(cmdPull),
 		cli.Tree(cmdBuild),
+		cli.Tree(cmdPull),
+		cli.Tree(cmdPush),
 		cli.Tree(cmdSave),
+		cli.Tree(cmdTag),
 	).Run(os.Args[1:]); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

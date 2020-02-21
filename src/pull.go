@@ -3,20 +3,24 @@ package src
 import (
 	"context"
 	"fmt"
-	"github.com/docker/distribution"
-	"github.com/docker/distribution/manifest/schema2"
-	"github.com/joomcode/errorx"
-	bolt "go.etcd.io/bbolt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path"
+
+	"github.com/davecgh/go-spew/spew"
+	"github.com/docker/distribution"
+	"github.com/docker/distribution/manifest/schema2"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/joomcode/errorx"
+	bolt "go.etcd.io/bbolt"
 )
 
 var bucketManifest = []byte("manifest.v2")
 
 func (s *State) Pull(ctx context.Context, image *ImageInfo, allowCached bool) (*schema2.DeserializedManifest, error) {
-	manifest, err := s.Manifest(ctx, image, allowCached)
+	manifest, err := s.PullManifest(ctx, image, allowCached)
 	if err != nil {
 		return nil, err
 	}
@@ -32,25 +36,28 @@ func (s *State) Pull(ctx context.Context, image *ImageInfo, allowCached bool) (*
 	return manifest, nil
 }
 
-func (s *State) Manifest(ctx context.Context, imageInfo *ImageInfo, allowCached bool) (*schema2.DeserializedManifest, error) {
-	var cached []byte
+func (s *State) PullManifest(ctx context.Context, imageInfo *ImageInfo, allowCached bool) (*schema2.DeserializedManifest, error) {
 	if allowCached {
-		if err := s.db.View(func(tx *bolt.Tx) error {
-			b := tx.Bucket(bucketManifest)
-			if b == nil {
-				return nil
-			}
-			cached = b.Get([]byte(imageInfo.Name))
-			return nil
-		}); err != nil {
+		cached, err := s.LoadManifest(ctx, imageInfo)
+		if err != nil {
 			return nil, err
 		}
-	}
-	if len(cached) > 0 {
-		var manifest schema2.DeserializedManifest
-		if err := manifest.UnmarshalJSON(cached); err == nil {
-			return &manifest, nil
+		if cached != nil {
+			return cached, nil
 		}
+	}
+
+	if false {
+		// TODO: Move to remote
+		ref, err := name.ParseReference(imageInfo.Name)
+		if err != nil {
+			return nil, err
+		}
+		desc, err := remote.Get(ref)
+		if err != nil {
+			return nil, err
+		}
+		spew.Dump(desc)
 	}
 
 	hub, err := s.Registry(ctx, imageInfo)
@@ -61,27 +68,48 @@ func (s *State) Manifest(ctx context.Context, imageInfo *ImageInfo, allowCached 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.SaveManifest(ctx,manifest, imageInfo.Reference); err != nil {
+	if err := s.SaveManifest(ctx, manifest, imageInfo); err != nil {
 		return nil, err
 	}
 	return manifest, nil
 }
 
-func (s *State) SaveManifest(ctx context.Context, manifest *schema2.DeserializedManifest, reference string) error {
+func (s *State) LoadManifest(ctx context.Context, imageInfo *ImageInfo) (*schema2.DeserializedManifest, error) {
+	var cached []byte
+	if err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketManifest)
+		if b == nil {
+			return nil
+		}
+		cached = b.Get([]byte(imageInfo.Name))
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if len(cached) > 0 {
+		var manifest schema2.DeserializedManifest
+		if err := manifest.UnmarshalJSON(cached); err == nil {
+			return &manifest, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *State) SaveManifest(ctx context.Context, manifest *schema2.DeserializedManifest, imageInfo *ImageInfo) error {
 	cached, err := manifest.MarshalJSON()
 	if err != nil {
-		return   err
+		return err
 	}
 	if err := s.db.Update(func(tx *bolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists(bucketManifest)
 		if err != nil {
 			return err
 		}
-		return b.Put([]byte(reference), cached)
+		return b.Put([]byte(imageInfo.Name), cached)
 	}); err != nil {
-		return   err
+		return err
 	}
-	return   err
+	return err
 }
 
 func (s *State) blobName(blob distribution.Descriptor, suffix string) string {

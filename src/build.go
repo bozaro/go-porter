@@ -63,7 +63,7 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 		if err != nil {
 			return "", err
 		}
-		if err := s.SaveManifest(ctx, manifest, info.Name); err != nil {
+		if err := s.SaveManifest(ctx, manifest, info); err != nil {
 			return "", err
 		}
 	}
