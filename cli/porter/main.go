@@ -17,16 +17,21 @@ import (
 
 type CmdRootT struct {
 	cli.Helper
-	StateDir string `cli:"state" usage:"State directory"`
+	CacheDir   string `cli:"cache" usage:"State directory"`
+	ConfigFile string `cli:"config" usage:"Configuration file"`
 }
 
-func (c CmdRootT) GetStateDir() string {
-	return c.StateDir
+func (c CmdRootT) GetCacheDir() string {
+	return c.CacheDir
+}
+
+func (c CmdRootT) GetConfigFile() string {
+	return c.ConfigFile
 }
 
 type cmdPullT struct {
 	CmdRootT
-	Cache bool `cli:"cache" usage:"Don't refresh cached manifest files'"`
+	Cached bool `cli:"cached" usage:"Don't refresh cached manifest files'"`
 }
 
 type cmdBuildT struct {
@@ -80,8 +85,13 @@ func newCmdRoot() CmdRootT {
 	if err != nil {
 		panic(err)
 	}
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		panic(err)
+	}
 	return CmdRootT{
-		StateDir: path.Join(cacheDir, strings.ReplaceAll(buildInfo.Main.Path, "/", ".")),
+		CacheDir:   path.Join(cacheDir, strings.ReplaceAll(buildInfo.Main.Path, "/", ".")),
+		ConfigFile: path.Join(configDir, path.Base(buildInfo.Main.Path)+".yaml"),
 	}
 }
 
@@ -109,7 +119,7 @@ var cmdPull = &cli.Command{
 			if err != nil {
 				return err
 			}
-			if _, err := state.Pull(ctx, image, argv.Cache); err != nil {
+			if _, err := state.Pull(ctx, image, argv.Cached); err != nil {
 				return err
 			}
 		}

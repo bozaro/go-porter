@@ -10,26 +10,40 @@ import (
 )
 
 type StateConfig interface {
-	GetStateDir() string
+	GetCacheDir() string
+	GetConfigFile() string
 }
 
 type State struct {
+	config   Config
 	stateDir string
 	db       *bolt.DB
 }
 
 func NewState(config StateConfig) (*State, error) {
-	stateDir := config.GetStateDir()
-	_ = os.MkdirAll(stateDir, 0755)
+	cacheDir := config.GetCacheDir()
+	_ = os.MkdirAll(cacheDir, 0755)
 
-	stateFile := path.Join(stateDir, "state.db")
+	configFile := config.GetConfigFile()
+	var stateConfig Config
+	if f, err := os.Open(configFile); err == nil {
+		defer f.Close()
+		if err := stateConfig.Load(f); err != nil {
+			return nil, err
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	stateFile := path.Join(cacheDir, "state.db")
 	db, err := bolt.Open(stateFile, 0644, &bolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
 		return nil, errorx.InternalError.New("can't open cache: %s", stateFile)
 	}
 
 	return &State{
-		stateDir: stateDir,
+		config:   stateConfig,
+		stateDir: cacheDir,
 		db:       db,
 	}, nil
 }
