@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/joomcode/errorx"
 )
 
 func (s *State) Push(ctx context.Context, images ...string) error {
@@ -22,6 +23,9 @@ func (s *State) Push(ctx context.Context, images ...string) error {
 		manifest, err := s.LoadManifest(ctx, image)
 		if err != nil {
 			return err
+		}
+		if manifest == nil {
+			return errorx.IllegalArgument.New("can't find manifest for: %s", image.Name())
 		}
 
 		if err := remote.Write(image, s.NewImage(ctx, manifest), s.RemoveOptions(image)...); err != nil {
