@@ -13,10 +13,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/joomcode/errorx"
-	bolt "go.etcd.io/bbolt"
 )
 
-var bucketManifest = []byte("manifest.v2")
+var bucketManifest = "manifest.v1"
 
 func (s *State) Pull(ctx context.Context, image name.Reference, allowCached bool) (*schema2.DeserializedManifest, error) {
 	manifest, err := s.PullManifest(ctx, image, allowCached)
@@ -67,21 +66,13 @@ func (s *State) PullManifest(ctx context.Context, image name.Reference, allowCac
 
 func (s *State) LoadManifest(ctx context.Context, image name.Reference) (*schema2.DeserializedManifest, error) {
 	var cached []byte
-	if err := s.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket(bucketManifest)
-		if b == nil {
-			return nil
-		}
-		cached = b.Get([]byte(image.Name()))
-		return nil
-	}); err != nil {
+	cached, found, err := s.cacheLoad(bucketManifest, image.Name())
+	if err != nil || !found {
 		return nil, err
 	}
-	if len(cached) > 0 {
-		var manifest schema2.DeserializedManifest
-		if err := manifest.UnmarshalJSON(cached); err == nil {
-			return &manifest, nil
-		}
+	var manifest schema2.DeserializedManifest
+	if err := manifest.UnmarshalJSON(cached); err == nil {
+		return &manifest, nil
 	}
 	return nil, nil
 }
@@ -91,16 +82,7 @@ func (s *State) SaveManifest(ctx context.Context, manifest *schema2.Deserialized
 	if err != nil {
 		return err
 	}
-	if err := s.db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists(bucketManifest)
-		if err != nil {
-			return err
-		}
-		return b.Put([]byte(image.Name()), cached)
-	}); err != nil {
-		return err
-	}
-	return err
+	return s.cacheSave(bucketManifest, image.Name(), cached)
 }
 
 func (s *State) blobName(blob distribution.Descriptor, suffix string) string {

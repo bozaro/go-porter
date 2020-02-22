@@ -23,9 +23,10 @@ require (
 	github.com/mkideal/pkg v0.0.0-20170503154153-3e188c9e7ecc // indirect
 	github.com/moby/buildkit v0.6.3
 	github.com/opencontainers/go-digest v1.0.0-rc1
+	github.com/philhofer/fwd v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.4.2
-	go.etcd.io/bbolt v1.3.3
+	github.com/tinylib/msgp v1.1.1
 	golang.org/x/crypto v0.0.0-20200208060501-ecb85df21340 // indirect
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e // indirect
 	golang.org/x/sys v0.0.0-20200219091948-cb0a6d8edb6c // indirect

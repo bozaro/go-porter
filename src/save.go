@@ -5,11 +5,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"github.com/google/go-containerregistry/pkg/name"
 	"io"
 	"os"
 	"path"
 	"sort"
+
+	"github.com/google/go-containerregistry/pkg/name"
 
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema2"
@@ -18,10 +19,9 @@ import (
 	"github.com/joomcode/errorx"
 	"github.com/klauspost/compress/gzip"
 	"github.com/opencontainers/go-digest"
-	bolt "go.etcd.io/bbolt"
 )
 
-var bucketUnpacked = []byte("unpacked.v2")
+var bucketUnpacked = "unpacked.v1"
 
 func (s *State) Save(ctx context.Context, w io.Writer, images ...string) error {
 	infos := make([]name.Reference, 0, len(images))
@@ -230,20 +230,13 @@ func (s *State) writeImageManifests(ctx context.Context, w *tar.Writer, configs 
 }
 
 func (s *State) UnpackedLayer(ctx context.Context, layer distribution.Descriptor) (*distribution.Descriptor, error) {
-	var cached []byte
-	if err := s.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket(bucketUnpacked)
-		if b == nil {
-			return nil
-		}
-		cached = b.Get([]byte(layer.Digest))
-		return nil
-	}); err != nil {
+	cached, found, err := s.cacheLoad(bucketUnpacked, string(layer.Digest))
+	if err != nil {
 		return nil, err
 	}
 
 	var unpackedDesc *distribution.Descriptor
-	if len(cached) > 0 {
+	if found {
 		var desc distribution.Descriptor
 		if err := json.Unmarshal(cached, &desc); err == nil {
 			if stat, err := os.Stat(s.blobName(desc, "")); err == nil && !stat.IsDir() {
@@ -292,13 +285,7 @@ func (s *State) UnpackedLayer(ctx context.Context, layer distribution.Descriptor
 			return nil, err
 		}
 
-		if err := s.db.Update(func(tx *bolt.Tx) error {
-			b, err := tx.CreateBucketIfNotExists(bucketUnpacked)
-			if err != nil {
-				return err
-			}
-			return b.Put([]byte(layer.Digest), cached)
-		}); err != nil {
+		if err := s.cacheSave(bucketUnpacked, string(layer.Digest), cached); err != nil {
 			return nil, err
 		}
 	}
