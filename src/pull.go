@@ -46,7 +46,7 @@ func (s *State) PullManifest(ctx context.Context, image name.Reference, allowCac
 		}
 	}
 
-	desc, err := remote.Image(image)
+	desc, err := remote.Image(image, s.RemoveOptions(image)...)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (s *State) DownloadBlob(ctx context.Context, image name.Reference, blob dis
 	}
 
 	layerDigest := image.Context().Digest(blob.Digest.String())
-	layer, err := remote.Layer(layerDigest)
+	layer, err := remote.Layer(layerDigest, s.RemoveOptions(image)...)
 	if err != nil {
 		return "", err
 	}
