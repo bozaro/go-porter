@@ -8,7 +8,6 @@ import (
 	"os"
 	"path"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema2"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -47,27 +46,23 @@ func (s *State) PullManifest(ctx context.Context, image name.Reference, allowCac
 		}
 	}
 
-	if false {
-		// TODO: Move to remote
-		desc, err := remote.Get(image)
-		if err != nil {
-			return nil, err
-		}
-		spew.Dump(desc)
+	desc, err := remote.Image(image)
+	if err != nil {
+		return nil, err
 	}
 
-	hub, err := s.Registry(ctx, image)
+	var manifest schema2.DeserializedManifest
+	rawManifest, err := desc.RawManifest()
 	if err != nil {
 		return nil, err
 	}
-	manifest, err := hub.ManifestV2(image.Context().RepositoryStr(), image.Identifier())
-	if err != nil {
+	if err := manifest.UnmarshalJSON(rawManifest); err != nil {
 		return nil, err
 	}
-	if err := s.SaveManifest(ctx, manifest, image); err != nil {
+	if err := s.SaveManifest(ctx, &manifest, image); err != nil {
 		return nil, err
 	}
-	return manifest, nil
+	return &manifest, nil
 }
 
 func (s *State) LoadManifest(ctx context.Context, image name.Reference) (*schema2.DeserializedManifest, error) {
@@ -152,12 +147,13 @@ func (s *State) DownloadBlob(ctx context.Context, image name.Reference, blob dis
 		return "", errorx.InternalError.Wrap(err, "can't get file state: %s", filename)
 	}
 
-	hub, err := s.Registry(ctx, image)
+	layerDigest := image.Context().Digest(blob.Digest.String())
+	layer, err := remote.Layer(layerDigest)
 	if err != nil {
 		return "", err
 	}
 
-	reader, err := hub.DownloadBlob(image.Context().RepositoryStr(), digest)
+	reader, err := layer.Compressed()
 	if err != nil {
 		return "", err
 	}

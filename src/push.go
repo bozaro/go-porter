@@ -2,11 +2,10 @@ package src
 
 import (
 	"context"
-	"github.com/google/go-containerregistry/pkg/name"
 )
 
 func (s *State) Push(ctx context.Context, images ...string) error {
-	infos := make([]name.Reference, 0, len(images))
+	/*infos := make([]name.Reference, 0, len(images))
 	// Resolve images
 	for _, image := range images {
 		info, err := name.ParseReference(image)
@@ -55,6 +54,6 @@ func (s *State) Push(ctx context.Context, images ...string) error {
 		if err := hub.PutManifest(repository, info.Identifier(), manifest); err != nil {
 			return err
 		}
-	}
+	}*/
 	return nil
 }
