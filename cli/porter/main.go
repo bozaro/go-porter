@@ -7,7 +7,9 @@ import (
 	"path"
 	"runtime/debug"
 	"strings"
+	"text/tabwriter"
 
+	"github.com/dustin/go-humanize"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/joomcode/errorx"
 	"github.com/mkideal/cli"
@@ -39,6 +41,10 @@ type cmdBuildT struct {
 	Dockerfile string `cli:"f,file" usage:"Name of the Dockerfile"`
 	Tag        string `cli:"*t,tag" usage:"Name and optionally a tag in the 'name:tag' format"`
 	Target     string `cli:"target" usage:"Set the target build stage to build"`
+}
+
+type cmdImagesT struct {
+	CmdRootT
 }
 
 type cmdSaveT struct {
@@ -155,6 +161,57 @@ var cmdBuild = &cli.Command{
 	},
 }
 
+var cmdImages = &cli.Command{
+	Name: "images",
+	Desc: "List images",
+	Argv: func() interface{} {
+		return &cmdImagesT{
+			CmdRootT: newCmdRoot(),
+		}
+	},
+	CanSubRoute: true,
+	Fn: func(c *cli.Context) error {
+		argv := c.Argv().(*cmdImagesT)
+		ctx := context.Background()
+		state, err := src.NewState(argv)
+		if err != nil {
+			return err
+		}
+		defer state.Close()
+
+		images, err := state.GetImages(ctx)
+		if err != nil {
+			return err
+		}
+
+		w := tabwriter.NewWriter(os.Stdout, 1, 0, 3, ' ', 0)
+		fmt.Fprintln(w, strings.Join([]string{
+			"REPOSITORY",
+			"TAG",
+			"IMAGE ID",
+			"SIZE",
+		}, "\t"))
+		var lines []string
+		for image, manifest := range images {
+			var size int64
+			for _, layer := range manifest.Layers {
+				size += layer.Size
+			}
+			lines = append(lines, strings.Join([]string{
+				image.Context().RegistryStr() + "/" + image.Context().RepositoryStr(),
+				image.Identifier(),
+				manifest.Config.Digest.Hex()[0:12],
+				humanize.Bytes(uint64(size)),
+			}, "\t"))
+		}
+		for _, line := range lines {
+			fmt.Fprintln(w, line)
+		}
+		w.Flush()
+		return nil
+	},
+}
+
 var cmdSave = &cli.Command{
 	Name: "save",
 	Desc: "Save one or more images to a tar archive (streamed to STDOUT by default)",
@@ -248,6 +305,7 @@ var cmdTag = &cli.Command{
 func main() {
 	if err := cli.Root(root,
 		cli.Tree(cmdBuild),
+		cli.Tree(cmdImages),
 		cli.Tree(cmdPull),
 		cli.Tree(cmdPush),
 		cli.Tree(cmdSave),
