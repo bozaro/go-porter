@@ -17,3 +17,6 @@
 
 # Idea files
 .idea/
+
+# Cli binary
+porter
