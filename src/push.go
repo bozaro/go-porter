@@ -2,16 +2,18 @@ package src
 
 import (
 	"context"
+	"github.com/google/go-containerregistry/pkg/name"
 )
 
 func (s *State) Push(ctx context.Context, images ...string) error {
-	infos := make([]*ImageInfo, 0, len(images))
+	infos := make([]name.Reference, 0, len(images))
 	// Resolve images
 	for _, image := range images {
-		info, err := s.ResolveImage(image)
+		info, err := name.ParseReference(image)
 		if err != nil {
 			return err
 		}
+		info, _ = name.ParseReference(info.Name())
 		infos = append(infos, info)
 	}
 	// Push manifests
@@ -25,9 +27,10 @@ func (s *State) Push(ctx context.Context, images ...string) error {
 		if err != nil {
 			return err
 		}
+		repository := info.Context().RepositoryStr()
 		for _, layer := range manifest.Layers {
-			if err := func() error {
-				exists, err := hub.HasBlob(info.Repository, layer.Digest)
+				if err := func() error {
+				exists, err := hub.HasBlob(repository, layer.Digest)
 				if err != nil {
 					return err
 				}
@@ -41,7 +44,7 @@ func (s *State) Push(ctx context.Context, images ...string) error {
 				}
 				defer r.Close()
 
-				if err := hub.UploadBlob(info.Repository, layer.Digest, r); err != nil {
+				if err := hub.UploadBlob(repository, layer.Digest, r); err != nil {
 					return err
 				}
 				return nil
@@ -49,7 +52,7 @@ func (s *State) Push(ctx context.Context, images ...string) error {
 				return err
 			}
 		}
-		if err := hub.PutManifest(info.Repository, info.Reference, manifest); err != nil {
+		if err := hub.PutManifest(repository, info.Identifier(), manifest); err != nil {
 			return err
 		}
 	}

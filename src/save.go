@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"github.com/google/go-containerregistry/pkg/name"
 	"io"
 	"os"
 	"path"
@@ -23,11 +24,11 @@ import (
 var bucketUnpacked = []byte("unpacked.v2")
 
 func (s *State) Save(ctx context.Context, w io.Writer, images ...string) error {
-	infos := make([]*ImageInfo, 0, len(images))
+	infos := make([]name.Reference, 0, len(images))
 	tags := make(map[string]digest.Digest)
 	// Resolve images
 	for _, image := range images {
-		info, err := s.ResolveImage(image)
+		info, err := name.ParseReference(image)
 		if err != nil {
 			return err
 		}
@@ -45,7 +46,7 @@ func (s *State) Save(ctx context.Context, w io.Writer, images ...string) error {
 		}
 		manifests = append(manifests, manifest)
 
-		tags [info.Name] = manifest.Config.Digest
+		tags [info.Name()] = manifest.Config.Digest
 	}
 
 	// Export layers

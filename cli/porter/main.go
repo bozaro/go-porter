@@ -8,9 +8,11 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/joomcode/go-porter/src"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/joomcode/errorx"
 	"github.com/mkideal/cli"
+
+	"github.com/joomcode/go-porter/src"
 )
 
 type CmdRootT struct {
@@ -103,7 +105,7 @@ var cmdPull = &cli.Command{
 		defer state.Close()
 
 		for _, imageName := range c.Args() {
-			image, err := state.ResolveImage(imageName)
+			image, err := name.ParseReference(imageName)
 			if err != nil {
 				return err
 			}

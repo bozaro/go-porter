@@ -19,7 +19,7 @@ import (
 
 var bucketManifest = []byte("manifest.v2")
 
-func (s *State) Pull(ctx context.Context, image *ImageInfo, allowCached bool) (*schema2.DeserializedManifest, error) {
+func (s *State) Pull(ctx context.Context, image name.Reference, allowCached bool) (*schema2.DeserializedManifest, error) {
 	manifest, err := s.PullManifest(ctx, image, allowCached)
 	if err != nil {
 		return nil, err
@@ -36,9 +36,9 @@ func (s *State) Pull(ctx context.Context, image *ImageInfo, allowCached bool) (*
 	return manifest, nil
 }
 
-func (s *State) PullManifest(ctx context.Context, imageInfo *ImageInfo, allowCached bool) (*schema2.DeserializedManifest, error) {
+func (s *State) PullManifest(ctx context.Context, image name.Reference, allowCached bool) (*schema2.DeserializedManifest, error) {
 	if allowCached {
-		cached, err := s.LoadManifest(ctx, imageInfo)
+		cached, err := s.LoadManifest(ctx, image)
 		if err != nil {
 			return nil, err
 		}
@@ -49,39 +49,35 @@ func (s *State) PullManifest(ctx context.Context, imageInfo *ImageInfo, allowCac
 
 	if false {
 		// TODO: Move to remote
-		ref, err := name.ParseReference(imageInfo.Name)
-		if err != nil {
-			return nil, err
-		}
-		desc, err := remote.Get(ref)
+		desc, err := remote.Get(image)
 		if err != nil {
 			return nil, err
 		}
 		spew.Dump(desc)
 	}
 
-	hub, err := s.Registry(ctx, imageInfo)
+	hub, err := s.Registry(ctx, image)
 	if err != nil {
 		return nil, err
 	}
-	manifest, err := hub.ManifestV2(imageInfo.Repository, imageInfo.Reference)
+	manifest, err := hub.ManifestV2(image.Context().RepositoryStr(), image.Identifier())
 	if err != nil {
 		return nil, err
 	}
-	if err := s.SaveManifest(ctx, manifest, imageInfo); err != nil {
+	if err := s.SaveManifest(ctx, manifest, image); err != nil {
 		return nil, err
 	}
 	return manifest, nil
 }
 
-func (s *State) LoadManifest(ctx context.Context, imageInfo *ImageInfo) (*schema2.DeserializedManifest, error) {
+func (s *State) LoadManifest(ctx context.Context, image name.Reference) (*schema2.DeserializedManifest, error) {
 	var cached []byte
 	if err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucketManifest)
 		if b == nil {
 			return nil
 		}
-		cached = b.Get([]byte(imageInfo.Name))
+		cached = b.Get([]byte(image.Name()))
 		return nil
 	}); err != nil {
 		return nil, err
@@ -95,7 +91,7 @@ func (s *State) LoadManifest(ctx context.Context, imageInfo *ImageInfo) (*schema
 	return nil, nil
 }
 
-func (s *State) SaveManifest(ctx context.Context, manifest *schema2.DeserializedManifest, imageInfo *ImageInfo) error {
+func (s *State) SaveManifest(ctx context.Context, manifest *schema2.DeserializedManifest, image name.Reference) error {
 	cached, err := manifest.MarshalJSON()
 	if err != nil {
 		return err
@@ -105,7 +101,7 @@ func (s *State) SaveManifest(ctx context.Context, manifest *schema2.Deserialized
 		if err != nil {
 			return err
 		}
-		return b.Put([]byte(imageInfo.Name), cached)
+		return b.Put([]byte(image.Name()), cached)
 	}); err != nil {
 		return err
 	}
@@ -143,7 +139,7 @@ func (s *State) ReadBlob(ctx context.Context, blob distribution.Descriptor) ([]b
 	return ioutil.ReadFile(s.blobName(blob, ""))
 }
 
-func (s *State) DownloadBlob(ctx context.Context, imageInfo *ImageInfo, blob distribution.Descriptor) (string, error) {
+func (s *State) DownloadBlob(ctx context.Context, image name.Reference, blob distribution.Descriptor) (string, error) {
 	filename := s.blobName(blob, "")
 	digest := blob.Digest
 	_ = os.MkdirAll(path.Dir(filename), 0755)
@@ -156,12 +152,12 @@ func (s *State) DownloadBlob(ctx context.Context, imageInfo *ImageInfo, blob dis
 		return "", errorx.InternalError.Wrap(err, "can't get file state: %s", filename)
 	}
 
-	hub, err := s.Registry(ctx, imageInfo)
+	hub, err := s.Registry(ctx, image)
 	if err != nil {
 		return "", err
 	}
 
-	reader, err := hub.DownloadBlob(imageInfo.Repository, digest)
+	reader, err := hub.DownloadBlob(image.Context().RepositoryStr(), digest)
 	if err != nil {
 		return "", err
 	}

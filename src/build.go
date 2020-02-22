@@ -2,6 +2,7 @@ package src
 
 import (
 	"context"
+	"github.com/google/go-containerregistry/pkg/name"
 	"os"
 	"path"
 
@@ -33,7 +34,7 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 		return "", err
 	}
 
-	baseImage, err := s.ResolveImage(stage.BaseName)
+	baseImage, err := name.ParseReference(stage.BaseName)
 	if err != nil {
 		return "", err
 	}
@@ -55,7 +56,7 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 	}
 
 	if tag := args.GetTag(); tag != "" {
-		info, err := s.ResolveImage(tag)
+		image, err := name.ParseReference(tag)
 		if err != nil {
 			return "", err
 		}
@@ -63,7 +64,7 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 		if err != nil {
 			return "", err
 		}
-		if err := s.SaveManifest(ctx, manifest, info); err != nil {
+		if err := s.SaveManifest(ctx, manifest, image); err != nil {
 			return "", err
 		}
 	}
