@@ -281,6 +281,7 @@ func (b *BuildContext) applyEntrypointCommand(cmd *instructions.EntrypointComman
 	if cmd.PrependShell {
 		args = append(getShell(b.configFile.Config, b.configFile.OS), args...)
 	}
+	b.configFile.Config.Cmd = nil
 	b.configFile.Config.Entrypoint = args
 }
 
