@@ -42,7 +42,7 @@ pipeline {
                                     "HOME=${WORKSPACE}",
                                     "CGO_ENABLED=0",
                             ]) {
-                                sh "go build -o ${WORKSPACE}/bin/${GOOS}_${GOARCH}/porter ./cli/..."
+                                sh "go build -o ${WORKSPACE}/bin/${GOOS}_${GOARCH}/porter ./cli/porter/"
                             }
                         }
                     }
