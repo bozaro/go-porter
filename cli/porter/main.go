@@ -110,70 +110,71 @@ func newCmdRoot() CmdRootT {
 	}
 }
 
-var cmdPull = &cli.Command{
-	Name: "pull",
-	Desc: "Pull an image from a registry",
-	Argv: func() interface{} {
-		return &cmdPullT{
-			CmdRootT: newCmdRoot(),
-		}
-	},
-	NumArg:      cli.AtLeast(1),
-	CanSubRoute: true,
-	Fn: func(c *cli.Context) error {
-		argv := c.Argv().(*cmdPullT)
-		ctx := context.Background()
-		state, err := src.NewState(argv)
-		if err != nil {
-			return err
-		}
-		defer state.Close()
-
-		for _, imageName := range c.Args() {
-			image, err := name.ParseReference(imageName)
+func NewImagePullCommand(cmd string) *cli.Command {
+	return &cli.Command{
+		Name: cmd,
+		Desc: "Pull an image from a registry",
+		Argv: func() interface{} {
+			return &cmdPullT{
+				CmdRootT: newCmdRoot(),
+			}
+		},
+		NumArg:      cli.AtLeast(1),
+		CanSubRoute: true,
+		Fn: func(c *cli.Context) error {
+			argv := c.Argv().(*cmdPullT)
+			ctx := context.Background()
+			state, err := src.NewState(argv)
 			if err != nil {
 				return err
 			}
-			if _, err := state.Pull(ctx, image, argv.Cached); err != nil {
+			defer state.Close()
+
+			for _, imageName := range c.Args() {
+				image, err := name.ParseReference(imageName)
+				if err != nil {
+					return err
+				}
+				if _, err := state.Pull(ctx, image, argv.Cached); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+}
+
+func NewImageBuildCommand(name string) *cli.Command {
+	return &cli.Command{
+		Name: name,
+		Desc: "Build an image from a Dockerfile",
+		Argv: func() interface{} {
+			return &cmdBuildT{
+				CmdRootT: newCmdRoot(),
+			}
+		},
+		NumArg:      cli.ExactN(1),
+		CanSubRoute: true,
+		Fn: func(c *cli.Context) error {
+			argv := c.Argv().(*cmdBuildT)
+			ctx := context.Background()
+			state, err := src.NewState(argv)
+			if err != nil {
 				return err
 			}
-		}
-		return nil
-	},
+			defer state.Close()
+
+			digest, err := state.Build(ctx, argv, c.Args()[0])
+			if err != nil {
+				return err
+			}
+			fmt.Println(digest)
+			return nil
+		},
+	}
 }
 
-var cmdBuild = &cli.Command{
-	Name: "build",
-	Desc: "Build an image from a Dockerfile",
-	Argv: func() interface{} {
-		return &cmdBuildT{
-			CmdRootT: newCmdRoot(),
-		}
-	},
-	NumArg:      cli.ExactN(1),
-	CanSubRoute: true,
-	Fn: func(c *cli.Context) error {
-		argv := c.Argv().(*cmdBuildT)
-		ctx := context.Background()
-		state, err := src.NewState(argv)
-		if err != nil {
-			return err
-		}
-		defer state.Close()
-
-		digest, err := state.Build(ctx, argv, c.Args()[0])
-		if err != nil {
-			return err
-		}
-		fmt.Println(digest)
-		return nil
-	},
-}
-
-var cmdImages = NewImagesCommand("images")
-var cmdImageLs = NewImagesCommand("ls")
-
-func NewImagesCommand(name string) *cli.Command {
+func NewImageListCommand(name string) *cli.Command {
 	return &cli.Command{
 		Name: name,
 		Desc: "List images",
@@ -226,9 +227,6 @@ func NewImagesCommand(name string) *cli.Command {
 	}
 }
 
-var cmdSave = NewImageSaveCommand("save")
-var cmdImageSave = NewImageSaveCommand("save")
-
 func NewImageSaveCommand(name string) *cli.Command {
 	return &cli.Command{
 		Name: name,
@@ -269,70 +267,78 @@ func NewImageSaveCommand(name string) *cli.Command {
 	}
 }
 
-var cmdPush = &cli.Command{
-	Name: "push",
-	Desc: "Push one or more images to a registry",
-	Argv: func() interface{} {
-		return &cmdPushT{
-			CmdRootT: newCmdRoot(),
-		}
-	},
-	NumArg:      cli.AtLeast(1),
-	CanSubRoute: true,
-	Fn: func(c *cli.Context) error {
-		argv := c.Argv().(*cmdPushT)
-		ctx := context.Background()
-		state, err := src.NewState(argv)
-		if err != nil {
-			return err
-		}
-		defer state.Close()
+func NewImagePushCommand(name string) *cli.Command {
+	return &cli.Command{
+		Name: name,
+		Desc: "Push one or more images to a registry",
+		Argv: func() interface{} {
+			return &cmdPushT{
+				CmdRootT: newCmdRoot(),
+			}
+		},
+		NumArg:      cli.AtLeast(1),
+		CanSubRoute: true,
+		Fn: func(c *cli.Context) error {
+			argv := c.Argv().(*cmdPushT)
+			ctx := context.Background()
+			state, err := src.NewState(argv)
+			if err != nil {
+				return err
+			}
+			defer state.Close()
 
-		if err := state.Push(ctx, c.Args()...); err != nil {
-			return err
-		}
-		return nil
-	},
+			if err := state.Push(ctx, c.Args()...); err != nil {
+				return err
+			}
+			return nil
+		},
+	}
 }
 
-var cmdTag = &cli.Command{
-	Name: "tag",
-	Desc: "Create a tag TARGET_IMAGE that refers to SOURCE_IMAGE",
-	Argv: func() interface{} {
-		return &cmdTagT{
-			CmdRootT: newCmdRoot(),
-		}
-	},
-	NumArg:      cli.ExactN(2),
-	CanSubRoute: true,
-	Fn: func(c *cli.Context) error {
-		argv := c.Argv().(*cmdTagT)
-		ctx := context.Background()
-		state, err := src.NewState(argv)
-		if err != nil {
-			return err
-		}
-		defer state.Close()
+func NewImageTagCommand(name string) *cli.Command {
+	return &cli.Command{
+		Name: name,
+		Desc: "Create a tag TARGET_IMAGE that refers to SOURCE_IMAGE",
+		Argv: func() interface{} {
+			return &cmdTagT{
+				CmdRootT: newCmdRoot(),
+			}
+		},
+		NumArg:      cli.ExactN(2),
+		CanSubRoute: true,
+		Fn: func(c *cli.Context) error {
+			argv := c.Argv().(*cmdTagT)
+			ctx := context.Background()
+			state, err := src.NewState(argv)
+			if err != nil {
+				return err
+			}
+			defer state.Close()
 
-		if err := state.Tag(ctx, c.Args()[0], c.Args()[1]); err != nil {
-			return err
-		}
-		return nil
-	},
+			if err := state.Tag(ctx, c.Args()[0], c.Args()[1]); err != nil {
+				return err
+			}
+			return nil
+		},
+	}
 }
 
 func main() {
 	if err := cli.Root(root,
-		cli.Tree(cmdBuild),
-		cli.Tree(cmdImages),
+		cli.Tree(NewImageBuildCommand("build")),
+		cli.Tree(NewImageListCommand("images")),
 		cli.Tree(cmdImage,
-			cli.Tree(cmdImageLs),
-			cli.Tree(cmdImageSave),
+			cli.Tree(NewImageBuildCommand("build")),
+			cli.Tree(NewImageListCommand("ls")),
+			cli.Tree(NewImagePullCommand("pull")),
+			cli.Tree(NewImagePushCommand("push")),
+			cli.Tree(NewImageSaveCommand("save")),
+			cli.Tree(NewImageTagCommand("tag")),
 		),
-		cli.Tree(cmdPull),
-		cli.Tree(cmdPush),
-		cli.Tree(cmdSave),
-		cli.Tree(cmdTag),
+		cli.Tree(NewImagePullCommand("pull")),
+		cli.Tree(NewImagePushCommand("push")),
+		cli.Tree(NewImageSaveCommand("save")),
+		cli.Tree(NewImageTagCommand("tag")),
 	).Run(os.Args[1:]); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
