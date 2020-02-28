@@ -12,9 +12,8 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/joomcode/errorx"
-	"github.com/mkideal/cli"
-
 	"github.com/joomcode/go-porter/src"
+	"github.com/mkideal/cli"
 )
 
 type CmdRootT struct {
@@ -24,7 +23,6 @@ type CmdRootT struct {
 }
 
 func (c CmdRootT) GetCacheDir() string {
-	fmt.Println(c.CacheDir)
 	return c.CacheDir
 }
 
@@ -44,7 +42,7 @@ type cmdBuildT struct {
 	Target     string `cli:"target" usage:"Set the target build stage to build"`
 }
 
-type cmdImagesT struct {
+type cmdImageLsT struct {
 	CmdRootT
 }
 
@@ -64,6 +62,16 @@ type cmdTagT struct {
 var root = &cli.Command{
 	Desc: "https://github.com/joomcode/go-porter",
 	Argv: func() interface{} { return new(CmdRootT) },
+	Fn: func(ctx *cli.Context) error {
+		ctx.WriteUsage()
+		os.Exit(1)
+		return nil
+	},
+}
+
+var cmdImage = &cli.Command{
+	Name: "image",
+	Desc: "Manage images",
 	Fn: func(ctx *cli.Context) error {
 		ctx.WriteUsage()
 		os.Exit(1)
@@ -162,55 +170,60 @@ var cmdBuild = &cli.Command{
 	},
 }
 
-var cmdImages = &cli.Command{
-	Name: "images",
-	Desc: "List images",
-	Argv: func() interface{} {
-		return &cmdImagesT{
-			CmdRootT: newCmdRoot(),
-		}
-	},
-	CanSubRoute: true,
-	Fn: func(c *cli.Context) error {
-		argv := c.Argv().(*cmdImagesT)
-		ctx := context.Background()
-		state, err := src.NewState(argv)
-		if err != nil {
-			return err
-		}
-		defer state.Close()
+var cmdImages = NewImagesCommand("images")
+var cmdImageLs = NewImagesCommand("ls")
 
-		images, err := state.GetImages(ctx)
-		if err != nil {
-			return err
-		}
-
-		w := tabwriter.NewWriter(os.Stdout, 1, 0, 3, ' ', 0)
-		fmt.Fprintln(w, strings.Join([]string{
-			"REPOSITORY",
-			"TAG",
-			"IMAGE ID",
-			"SIZE",
-		}, "\t"))
-		var lines []string
-		for image, manifest := range images {
-			var size int64
-			for _, layer := range manifest.Layers {
-				size += layer.Size
+func NewImagesCommand(name string) *cli.Command {
+	return &cli.Command{
+		Name: name,
+		Desc: "List images",
+		Argv: func() interface{} {
+			return &cmdImageLsT{
+				CmdRootT: newCmdRoot(),
 			}
-			lines = append(lines, strings.Join([]string{
-				image.Context().RegistryStr() + "/" + image.Context().RepositoryStr(),
-				image.Identifier(),
-				manifest.Config.Digest.Hex()[0:12],
-				humanize.Bytes(uint64(size)),
+		},
+		CanSubRoute: true,
+		Fn: func(c *cli.Context) error {
+			argv := c.Argv().(*cmdImageLsT)
+			ctx := context.Background()
+			state, err := src.NewState(argv)
+			if err != nil {
+				return err
+			}
+			defer state.Close()
+
+			images, err := state.GetImages(ctx)
+			if err != nil {
+				return err
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 1, 0, 3, ' ', 0)
+			fmt.Fprintln(w, strings.Join([]string{
+				"REPOSITORY",
+				"TAG",
+				"IMAGE ID",
+				"SIZE",
 			}, "\t"))
-		}
-		for _, line := range lines {
-			fmt.Fprintln(w, line)
-		}
-		w.Flush()
-		return nil
-	},
+			var lines []string
+			for image, manifest := range images {
+				var size int64
+				for _, layer := range manifest.Layers {
+					size += layer.Size
+				}
+				lines = append(lines, strings.Join([]string{
+					image.Context().RegistryStr() + "/" + image.Context().RepositoryStr(),
+					image.Identifier(),
+					manifest.Config.Digest.Hex()[0:12],
+					humanize.Bytes(uint64(size)),
+				}, "\t"))
+			}
+			for _, line := range lines {
+				fmt.Fprintln(w, line)
+			}
+			w.Flush()
+			return nil
+		},
+	}
 }
 
 var cmdSave = &cli.Command{
@@ -307,6 +320,9 @@ func main() {
 	if err := cli.Root(root,
 		cli.Tree(cmdBuild),
 		cli.Tree(cmdImages),
+		cli.Tree(cmdImage,
+			cli.Tree(cmdImageLs),
+		),
 		cli.Tree(cmdPull),
 		cli.Tree(cmdPush),
 		cli.Tree(cmdSave),
