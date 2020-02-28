@@ -226,42 +226,47 @@ func NewImagesCommand(name string) *cli.Command {
 	}
 }
 
-var cmdSave = &cli.Command{
-	Name: "save",
-	Desc: "Save one or more images to a tar archive (streamed to STDOUT by default)",
-	Argv: func() interface{} {
-		return &cmdSaveT{
-			CmdRootT: newCmdRoot(),
-		}
-	},
-	NumArg:      cli.AtLeast(1),
-	CanSubRoute: true,
-	Fn: func(c *cli.Context) error {
-		argv := c.Argv().(*cmdSaveT)
-		ctx := context.Background()
-		state, err := src.NewState(argv)
-		if err != nil {
-			return err
-		}
-		defer state.Close()
+var cmdSave = NewImageSaveCommand("save")
+var cmdImageSave = NewImageSaveCommand("save")
 
-		w := os.Stdout
-		if argv.Output != "" {
-			f, err := os.Create(argv.Output)
+func NewImageSaveCommand(name string) *cli.Command {
+	return &cli.Command{
+		Name: name,
+		Desc: "Save one or more images to a tar archive (streamed to STDOUT by default)",
+		Argv: func() interface{} {
+			return &cmdSaveT{
+				CmdRootT: newCmdRoot(),
+			}
+		},
+		NumArg:      cli.AtLeast(1),
+		CanSubRoute: true,
+		Fn: func(c *cli.Context) error {
+			argv := c.Argv().(*cmdSaveT)
+			ctx := context.Background()
+			state, err := src.NewState(argv)
 			if err != nil {
 				return err
 			}
-			defer f.Close()
-			w = f
-		}
-		if w == nil {
-			return errorx.IllegalArgument.New("stdout is not exists")
-		}
-		if err := state.Save(ctx, w, c.Args()...); err != nil {
-			return err
-		}
-		return nil
-	},
+			defer state.Close()
+
+			w := os.Stdout
+			if argv.Output != "" {
+				f, err := os.Create(argv.Output)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				w = f
+			}
+			if w == nil {
+				return errorx.IllegalArgument.New("stdout is not exists")
+			}
+			if err := state.Save(ctx, w, c.Args()...); err != nil {
+				return err
+			}
+			return nil
+		},
+	}
 }
 
 var cmdPush = &cli.Command{
@@ -322,6 +327,7 @@ func main() {
 		cli.Tree(cmdImages),
 		cli.Tree(cmdImage,
 			cli.Tree(cmdImageLs),
+			cli.Tree(cmdImageSave),
 		),
 		cli.Tree(cmdPull),
 		cli.Tree(cmdPush),
