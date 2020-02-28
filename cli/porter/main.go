@@ -25,6 +25,7 @@ type CmdRootT struct {
 	cli.Helper
 	CacheDir   string `cli:"cache" usage:"State directory"`
 	ConfigFile string `cli:"config" usage:"Configuration file"`
+	LogLevel   int    `cli:"log-level" usage:"Log level (0 - silent, 1 - error, 2 - info, 3 - debug)"`
 }
 
 func (c CmdRootT) GetCacheDir() string {
@@ -33,6 +34,10 @@ func (c CmdRootT) GetCacheDir() string {
 
 func (c CmdRootT) GetConfigFile() string {
 	return c.ConfigFile
+}
+
+func (c CmdRootT) GetLogLevel() int {
+	return c.LogLevel
 }
 
 type cmdPullT struct {
@@ -66,7 +71,7 @@ type cmdTagT struct {
 
 var root = &cli.Command{
 	Desc: "https://github.com/joomcode/go-porter",
-	Argv: func() interface{} { return new(CmdRootT) },
+	Argv: func() interface{} { return newCmdRoot() },
 	Fn: func(ctx *cli.Context) error {
 		ctx.WriteUsage()
 		os.Exit(1)
@@ -112,6 +117,32 @@ func newCmdRoot() CmdRootT {
 	return CmdRootT{
 		CacheDir:   path.Join(cacheDir, strings.ReplaceAll(buildInfo.Main.Path, "/", ".")),
 		ConfigFile: path.Join(configDir, path.Base(buildInfo.Main.Path)+".yaml"),
+		LogLevel:   1,
+	}
+}
+
+func NewImageRemoveCommand(cmd string) *cli.Command {
+	return &cli.Command{
+		Name: cmd,
+		Desc: "Remove one or more images",
+		Argv: func() interface{} {
+			return &cmdPullT{
+				CmdRootT: newCmdRoot(),
+			}
+		},
+		NumArg:      cli.AtLeast(1),
+		CanSubRoute: true,
+		Fn: func(c *cli.Context) error {
+			argv := c.Argv().(*cmdPullT)
+			ctx := context.Background()
+			state, err := src.NewState(argv)
+			if err != nil {
+				return err
+			}
+			defer state.Close()
+
+			return state.Remove(ctx, c.Args()...)
+		},
 	}
 }
 
@@ -263,6 +294,9 @@ func NewImageInspectCommand(cmd string) *cli.Command {
 				manifest, err := state.LoadManifest(ctx, info)
 				if err != nil {
 					return err
+				}
+				if manifest == nil {
+					return errorx.IllegalArgument.New("image not found: %s", info.Name())
 				}
 
 				inspect := inspectedByID[manifest.Config.Digest]
@@ -430,11 +464,13 @@ func main() {
 			cli.Tree(NewImageListCommand("ls")),
 			cli.Tree(NewImagePullCommand("pull")),
 			cli.Tree(NewImagePushCommand("push")),
+			cli.Tree(NewImageRemoveCommand("rm")),
 			cli.Tree(NewImageSaveCommand("save")),
 			cli.Tree(NewImageTagCommand("tag")),
 		),
 		cli.Tree(NewImagePullCommand("pull")),
 		cli.Tree(NewImagePushCommand("push")),
+		cli.Tree(NewImageRemoveCommand("rmi")),
 		cli.Tree(NewImageSaveCommand("save")),
 		cli.Tree(NewImageTagCommand("tag")),
 	).Run(os.Args[1:]); err != nil {

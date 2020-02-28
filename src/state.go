@@ -9,10 +9,12 @@ import (
 	"path"
 	"strings"
 
+	"github.com/google/martian/log"
 	"github.com/tinylib/msgp/msgp"
 )
 
 type StateConfig interface {
+	GetLogLevel() int
 	GetCacheDir() string
 	GetConfigFile() string
 }
@@ -23,6 +25,8 @@ type State struct {
 }
 
 func NewState(config StateConfig) (*State, error) {
+	log.SetLevel(config.GetLogLevel())
+
 	cacheDir := config.GetCacheDir()
 	_ = os.MkdirAll(cacheDir, 0755)
 
@@ -54,6 +58,10 @@ func (s *State) cacheSave(bucket string, key string, data [] byte) error {
 		_, err := w.Write(payload)
 		return err
 	})
+}
+
+func (s *State) cacheRemove(bucket string, key string) error {
+	return os.Remove(s.cacheFile(bucket, key))
 }
 
 func (s *State) cacheLoad(bucket string, key string) ([]byte, bool, error) {
