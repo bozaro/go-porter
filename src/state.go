@@ -9,12 +9,12 @@ import (
 	"path"
 	"strings"
 
-	"github.com/google/martian/log"
+	"github.com/sirupsen/logrus"
 	"github.com/tinylib/msgp/msgp"
 )
 
 type StateConfig interface {
-	GetLogLevel() int
+	GetLogLevel() logrus.Level
 	GetCacheDir() string
 	GetConfigFile() string
 }
@@ -25,7 +25,10 @@ type State struct {
 }
 
 func NewState(config StateConfig) (*State, error) {
-	log.SetLevel(config.GetLogLevel())
+	logrus.SetLevel(config.GetLogLevel())
+
+	logrus.Infof("PORTER_CACHE=%s", config.GetCacheDir())
+	logrus.Infof("PORTER_CONFIG=%s", config.GetConfigFile())
 
 	cacheDir := config.GetCacheDir()
 	_ = os.MkdirAll(cacheDir, 0755)

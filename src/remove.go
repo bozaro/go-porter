@@ -7,7 +7,7 @@ import (
 	"path"
 
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/martian/log"
+	"github.com/sirupsen/logrus"
 )
 
 func (s *State) Remove(ctx context.Context, images ...string) error {
@@ -70,10 +70,10 @@ func (s *State) Remove(ctx context.Context, images ...string) error {
 
 	for _, file := range files {
 		if _, ok := used[file]; ok {
-			log.Debugf("%s - keep", file)
+			logrus.Debugf("%s - keep", file)
 			continue
 		}
-		log.Infof("%s - remove", file)
+		logrus.Infof("%s - remove", file)
 		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
 			return err
 		}

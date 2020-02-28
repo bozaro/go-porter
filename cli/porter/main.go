@@ -16,16 +16,18 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/joomcode/errorx"
-	"github.com/joomcode/go-porter/src"
 	"github.com/mkideal/cli"
 	"github.com/opencontainers/go-digest"
+	"github.com/sirupsen/logrus"
+
+	"github.com/joomcode/go-porter/src"
 )
 
 type CmdRootT struct {
 	cli.Helper
 	CacheDir   string `cli:"cache" usage:"State directory" dft:"$PORTER_CACHE"`
 	ConfigFile string `cli:"config" usage:"Configuration file" dft:"$PORTER_CONFIG"`
-	LogLevel   int    `cli:"log-level" usage:"Log level (0 - silent, 1 - error, 2 - info, 3 - debug)"`
+	LogLevel   string `cli:"log" usage:"Log level (panic, fatal, error, warn, info, debug)" dft:"error"`
 }
 
 func (c CmdRootT) GetCacheDir() string {
@@ -36,8 +38,12 @@ func (c CmdRootT) GetConfigFile() string {
 	return c.ConfigFile
 }
 
-func (c CmdRootT) GetLogLevel() int {
-	return c.LogLevel
+func (c CmdRootT) GetLogLevel() logrus.Level {
+	level, err := logrus.ParseLevel(c.LogLevel)
+	if err != nil {
+		panic(err)
+	}
+	return level
 }
 
 type cmdPullT struct {
@@ -118,9 +124,9 @@ func newCmdRoot() CmdRootT {
 		panic(err)
 	}
 	return CmdRootT{
-		CacheDir: pathConfig("PORTER_CACHE",  path.Join(cacheDir, strings.ReplaceAll(buildInfo.Main.Path, "/", "."))),
-		ConfigFile: pathConfig("PORTER_CONFIG",path.Join(configDir, path.Base(buildInfo.Main.Path)+".yaml")),
-		LogLevel:   1,
+		CacheDir:   pathConfig("PORTER_CACHE", path.Join(cacheDir, strings.ReplaceAll(buildInfo.Main.Path, "/", "."))),
+		ConfigFile: pathConfig("PORTER_CONFIG", path.Join(configDir, path.Base(buildInfo.Main.Path)+".yaml")),
+		LogLevel:   "error",
 	}
 }
 
