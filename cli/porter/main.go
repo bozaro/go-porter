@@ -24,6 +24,7 @@ type CmdRootT struct {
 }
 
 func (c CmdRootT) GetCacheDir() string {
+	fmt.Println(c.CacheDir)
 	return c.CacheDir
 }
 

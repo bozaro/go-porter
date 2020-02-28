@@ -85,6 +85,13 @@ func (b *BuildContext) BuildManifest(ctx context.Context) (*schema2.Deserialized
 
 func (b *BuildContext) ApplyCommand(cmd instructions.Command) error {
 	logrus.Infof("Apply command: %s", cmd)
+	b.configFile.History = append(b.configFile.History, v1.History{
+		Created: v1.Time{
+			Time: time.Now().UTC(),
+		},
+		CreatedBy:  fmt.Sprintf("%s", cmd.Name()),
+		EmptyLayer: true,
+	})
 	switch cmd := cmd.(type) {
 	case *instructions.CopyCommand:
 		return b.applyCopyCommand(cmd)
@@ -134,6 +141,9 @@ func (b *BuildContext) FlushDelta(ctx context.Context) error {
 	b.layers = append(b.layers, *layer)
 	b.fs.Delta = nil
 	logrus.Infof("layer flushed: %s, %s, %v", layer.Digest, units.HumanSize(float64(layer.Size)), time.Now().Sub(t))
+
+	history := b.configFile.History
+	history[len(history)-1].EmptyLayer = false
 	return nil
 }
 

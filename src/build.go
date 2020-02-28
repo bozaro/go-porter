@@ -2,10 +2,10 @@ package src
 
 import (
 	"context"
-	"github.com/google/go-containerregistry/pkg/name"
 	"os"
 	"path"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/joomcode/errorx"
 	"github.com/moby/buildkit/frontend/dockerfile/instructions"
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
