@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -9,11 +10,15 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/dustin/go-humanize"
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/joomcode/errorx"
 	"github.com/joomcode/go-porter/src"
 	"github.com/mkideal/cli"
+	"github.com/opencontainers/go-digest"
 )
 
 type CmdRootT struct {
@@ -144,9 +149,9 @@ func NewImagePullCommand(cmd string) *cli.Command {
 	}
 }
 
-func NewImageBuildCommand(name string) *cli.Command {
+func NewImageBuildCommand(cmd string) *cli.Command {
 	return &cli.Command{
-		Name: name,
+		Name: cmd,
 		Desc: "Build an image from a Dockerfile",
 		Argv: func() interface{} {
 			return &cmdBuildT{
@@ -174,9 +179,9 @@ func NewImageBuildCommand(name string) *cli.Command {
 	}
 }
 
-func NewImageListCommand(name string) *cli.Command {
+func NewImageListCommand(cmd string) *cli.Command {
 	return &cli.Command{
-		Name: name,
+		Name: cmd,
 		Desc: "List images",
 		Argv: func() interface{} {
 			return &cmdImageLsT{
@@ -227,9 +232,100 @@ func NewImageListCommand(name string) *cli.Command {
 	}
 }
 
-func NewImageSaveCommand(name string) *cli.Command {
+func NewImageInspectCommand(cmd string) *cli.Command {
 	return &cli.Command{
-		Name: name,
+		Name: cmd,
+		Desc: "Return low-level information on Docker objects",
+		Argv: func() interface{} {
+			return &cmdImageLsT{
+				CmdRootT: newCmdRoot(),
+			}
+		},
+		NumArg:      cli.AtLeast(1),
+		CanSubRoute: true,
+		Fn: func(c *cli.Context) error {
+			argv := c.Argv().(*cmdImageLsT)
+			ctx := context.Background()
+			state, err := src.NewState(argv)
+			if err != nil {
+				return err
+			}
+			defer state.Close()
+
+			inspectedByID := make(map[digest.Digest]*types.ImageInspect)
+			inspected := make([]*types.ImageInspect, 0, len(c.Args()))
+			for _, image := range c.Args() {
+				info, err := name.ParseReference(image)
+				if err != nil {
+					return err
+				}
+
+				manifest, err := state.LoadManifest(ctx, info)
+				if err != nil {
+					return err
+				}
+
+				inspect := inspectedByID[manifest.Config.Digest]
+				if inspect == nil {
+					var imageManifest v1.ConfigFile
+					configBlob, err := state.ReadBlob(ctx, manifest.Config)
+					if err != nil {
+						return err
+					}
+					if err := json.Unmarshal(configBlob, &imageManifest); err != nil {
+						return err
+					}
+					layers := make([]string, 0, len(imageManifest.RootFS.DiffIDs))
+					for _, layer := range imageManifest.RootFS.DiffIDs {
+						layers = append(layers, layer.String())
+					}
+					var size int64
+					for _, layer := range manifest.Layers {
+						size += layer.Size
+					}
+					inspect = &types.ImageInspect{
+						ID:            manifest.Config.Digest.String(),
+						Created:       imageManifest.Created.String(),
+						DockerVersion: imageManifest.DockerVersion,
+						Architecture:  imageManifest.Architecture,
+						Author:        imageManifest.Author,
+						Os:            imageManifest.OS,
+						OsVersion:     imageManifest.OSVersion,
+						Config: &container.Config{
+							Env:         imageManifest.Config.Env,
+							Cmd:         imageManifest.Config.Cmd,
+							ArgsEscaped: imageManifest.Config.ArgsEscaped,
+							Entrypoint:  imageManifest.Config.Entrypoint,
+							WorkingDir:  imageManifest.Config.WorkingDir,
+							Labels:      imageManifest.Config.Labels,
+							User:        imageManifest.Config.User,
+						},
+						RootFS: types.RootFS{
+							Type:   imageManifest.RootFS.Type,
+							Layers: layers,
+						},
+						Size:        size,
+						VirtualSize: size,
+					}
+					inspected = append(inspected, inspect)
+					inspectedByID[manifest.Config.Digest] = inspect
+				}
+				inspected = append(inspected, inspect)
+				inspect.RepoTags = append(inspect.RepoTags, info.String())
+			}
+			payload, err := json.MarshalIndent(inspected, "", "    ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(payload))
+			return nil
+		},
+	}
+}
+
+func NewImageSaveCommand(cmd string) *cli.Command {
+	return &cli.Command{
+		Name: cmd,
 		Desc: "Save one or more images to a tar archive (streamed to STDOUT by default)",
 		Argv: func() interface{} {
 			return &cmdSaveT{
@@ -267,9 +363,9 @@ func NewImageSaveCommand(name string) *cli.Command {
 	}
 }
 
-func NewImagePushCommand(name string) *cli.Command {
+func NewImagePushCommand(cmd string) *cli.Command {
 	return &cli.Command{
-		Name: name,
+		Name: cmd,
 		Desc: "Push one or more images to a registry",
 		Argv: func() interface{} {
 			return &cmdPushT{
@@ -295,9 +391,9 @@ func NewImagePushCommand(name string) *cli.Command {
 	}
 }
 
-func NewImageTagCommand(name string) *cli.Command {
+func NewImageTagCommand(cmd string) *cli.Command {
 	return &cli.Command{
-		Name: name,
+		Name: cmd,
 		Desc: "Create a tag TARGET_IMAGE that refers to SOURCE_IMAGE",
 		Argv: func() interface{} {
 			return &cmdTagT{
@@ -327,8 +423,10 @@ func main() {
 	if err := cli.Root(root,
 		cli.Tree(NewImageBuildCommand("build")),
 		cli.Tree(NewImageListCommand("images")),
+		cli.Tree(NewImageInspectCommand("inspect")),
 		cli.Tree(cmdImage,
 			cli.Tree(NewImageBuildCommand("build")),
+			cli.Tree(NewImageInspectCommand("inspect")),
 			cli.Tree(NewImageListCommand("ls")),
 			cli.Tree(NewImagePullCommand("pull")),
 			cli.Tree(NewImagePushCommand("push")),
