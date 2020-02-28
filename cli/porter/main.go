@@ -23,8 +23,8 @@ import (
 
 type CmdRootT struct {
 	cli.Helper
-	CacheDir   string `cli:"cache" usage:"State directory"`
-	ConfigFile string `cli:"config" usage:"Configuration file"`
+	CacheDir   string `cli:"cache" usage:"State directory" dft:"$PORTER_CACHE"`
+	ConfigFile string `cli:"config" usage:"Configuration file" dft:"$PORTER_CONFIG"`
 	LogLevel   int    `cli:"log-level" usage:"Log level (0 - silent, 1 - error, 2 - info, 3 - debug)"`
 }
 
@@ -71,7 +71,10 @@ type cmdTagT struct {
 
 var root = &cli.Command{
 	Desc: "https://github.com/joomcode/go-porter",
-	Argv: func() interface{} { return newCmdRoot() },
+	Argv: func() interface{} {
+		argv := newCmdRoot()
+		return &argv
+	},
 	Fn: func(ctx *cli.Context) error {
 		ctx.WriteUsage()
 		os.Exit(1)
@@ -115,10 +118,25 @@ func newCmdRoot() CmdRootT {
 		panic(err)
 	}
 	return CmdRootT{
-		CacheDir:   path.Join(cacheDir, strings.ReplaceAll(buildInfo.Main.Path, "/", ".")),
-		ConfigFile: path.Join(configDir, path.Base(buildInfo.Main.Path)+".yaml"),
+		CacheDir: pathConfig("PORTER_CACHE",  path.Join(cacheDir, strings.ReplaceAll(buildInfo.Main.Path, "/", "."))),
+		ConfigFile: pathConfig("PORTER_CONFIG",path.Join(configDir, path.Base(buildInfo.Main.Path)+".yaml")),
 		LogLevel:   1,
 	}
+}
+
+func pathConfig(env string, def string) string {
+	value := os.Getenv(env)
+	if value == "" {
+		value = def
+	}
+	if !path.IsAbs(value) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			panic(err)
+		}
+		value = path.Join(cwd, value)
+	}
+	return path.Clean(value)
 }
 
 func NewImageRemoveCommand(cmd string) *cli.Command {
@@ -454,6 +472,7 @@ func NewImageTagCommand(cmd string) *cli.Command {
 }
 
 func main() {
+	cli.SetUsageStyle(cli.ManualStyle)
 	if err := cli.Root(root,
 		cli.Tree(NewImageBuildCommand("build")),
 		cli.Tree(NewImageListCommand("images")),
