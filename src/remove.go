@@ -5,6 +5,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/sirupsen/logrus"
@@ -97,6 +99,9 @@ func (s *State) findAllBlobFiles(ctx context.Context) ([]string, error) {
 			for _, item := range list {
 				if item.IsDir() {
 					next = append(next, path.Join(dir, item.Name()))
+					continue
+				}
+				if strings.HasPrefix(item.Name(), "~") && time.Now().Sub(item.ModTime()) < 5*time.Minute {
 					continue
 				}
 				result = append(result, path.Join(dir, item.Name()))
