@@ -42,7 +42,7 @@ func (s *State) Save(ctx context.Context, w io.Writer, images ...string) error {
 			return err
 		}
 		if manifest == nil {
-			return errorx.IllegalArgument.New("can't find manifest for tag: %s", info.Name)
+			return errorx.IllegalArgument.New("can't find manifest for tag: %s", info.Name())
 		}
 		manifests = append(manifests, manifest)
 
@@ -229,7 +229,7 @@ func (s *State) writeImageManifests(ctx context.Context, w *tar.Writer, configs 
 	return nil
 }
 
-func (s *State) UnpackedLayer(ctx context.Context, layer distribution.Descriptor) (*distribution.Descriptor, error) {
+func (s *State) GetUnpackedLayerDescriptor(ctx context.Context, layer distribution.Descriptor) (*distribution.Descriptor, error) {
 	cached, found, err := s.cacheLoad(bucketUnpacked, string(layer.Digest))
 	if err != nil {
 		return nil, err
@@ -243,6 +243,14 @@ func (s *State) UnpackedLayer(ctx context.Context, layer distribution.Descriptor
 				unpackedDesc = &desc
 			}
 		}
+	}
+	return unpackedDesc, nil
+}
+
+func (s *State) UnpackedLayer(ctx context.Context, layer distribution.Descriptor) (*distribution.Descriptor, error) {
+	unpackedDesc, err := s.GetUnpackedLayerDescriptor(ctx, layer)
+	if err != nil {
+		return nil, err
 	}
 
 	if unpackedDesc == nil {
@@ -280,7 +288,7 @@ func (s *State) UnpackedLayer(ctx context.Context, layer distribution.Descriptor
 			return nil, err
 		}
 
-		cached, err = json.Marshal(unpackedDesc)
+		cached, err := json.Marshal(unpackedDesc)
 		if err != nil {
 			return nil, err
 		}

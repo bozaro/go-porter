@@ -52,11 +52,12 @@ func (s *State) Remove(ctx context.Context, images ...string) error {
 			if _, ok := used[layerBlob]; !ok {
 				used[layerBlob] = struct{}{}
 
-				unpacked, err := s.UnpackedLayer(ctx, layer)
+				unpacked, err := s.GetUnpackedLayerDescriptor(ctx, layer)
 				if err != nil {
 					return err
 				}
 				if unpacked != nil {
+					used[ s.cacheFile(bucketUnpacked, layer.Digest.String())] = struct{}{}
 					used[s.blobName(*unpacked, "")] = struct{}{}
 				}
 			}
