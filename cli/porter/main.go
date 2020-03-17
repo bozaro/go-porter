@@ -61,6 +61,7 @@ type cmdBuildT struct {
 	Dockerfile string `cli:"f,file" usage:"Name of the Dockerfile"`
 	Tag        string `cli:"*t,tag" usage:"Name and optionally a tag in the 'name:tag' format"`
 	Target     string `cli:"target" usage:"Set the target build stage to build"`
+	Push       bool   `cli:"push" usage:"Push docker image after build"`
 }
 
 type cmdImageLsT struct {
@@ -234,6 +235,11 @@ func NewImageBuildCommand(cmd string) *cli.Command {
 				return err
 			}
 			fmt.Println(digest)
+			if argv.Push {
+				if err := state.Push(ctx, argv.GetTag()); err != nil {
+					return err
+				}
+			}
 			return nil
 		},
 	}
