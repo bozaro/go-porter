@@ -5,11 +5,12 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"io"
+	"strings"
+
+	"github.com/blang/vfs"
 	"github.com/docker/distribution"
 	"github.com/docker/docker/pkg/archive"
-	"io"
-	"io/ioutil"
-	"strings"
 )
 
 type TreeNode struct {
@@ -22,7 +23,7 @@ func (s *State) EmptyLayer() *TreeNode {
 	return &TreeNode{
 		Header: tar.Header{
 			Typeflag: tar.TypeDir,
-			Mode: 0755,
+			Mode:     0755,
 		},
 	}
 }
@@ -35,7 +36,7 @@ func (s *State) LayerTree(ctx context.Context, blob distribution.Descriptor) (*T
 	defer f.Close()
 
 	treeFile := s.blobName(blob, ".tree")
-	if cached, err := ioutil.ReadFile(treeFile); err == nil {
+	if cached, err := vfs.ReadFile(s.stateVfs, treeFile); err == nil {
 		var root TreeNode
 		if err := json.Unmarshal(cached, &root); err == nil {
 			return &root, nil
@@ -69,7 +70,7 @@ func (s *State) LayerTree(ctx context.Context, blob distribution.Descriptor) (*T
 		}
 	}
 
-	if err := safeWrite(treeFile, func(w io.Writer) error {
+	if err := safeWrite(s.stateVfs, treeFile, func(w io.Writer) error {
 		cache, err := json.Marshal(root)
 		if err != nil {
 			return err

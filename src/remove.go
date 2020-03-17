@@ -2,7 +2,6 @@ package src
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
@@ -39,7 +38,7 @@ func (s *State) Remove(ctx context.Context, images ...string) error {
 	used := map[string]struct{}{}
 	for image, manifest := range manifests {
 		cacheFile := s.cacheFile(bucketManifest, image.Name())
-		if _, ok := used [cacheFile]; ok {
+		if _, ok := used[cacheFile]; ok {
 			continue
 		}
 		used[cacheFile] = struct{}{}
@@ -59,7 +58,7 @@ func (s *State) Remove(ctx context.Context, images ...string) error {
 					return err
 				}
 				if unpacked != nil {
-					used[ s.cacheFile(bucketUnpacked, layer.Digest.String())] = struct{}{}
+					used[s.cacheFile(bucketUnpacked, layer.Digest.String())] = struct{}{}
 					used[s.blobName(*unpacked, "")] = struct{}{}
 				}
 			}
@@ -77,7 +76,7 @@ func (s *State) Remove(ctx context.Context, images ...string) error {
 			continue
 		}
 		logrus.Infof("%s - remove", file)
-		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+		if err := s.stateVfs.Remove(file); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
@@ -86,13 +85,13 @@ func (s *State) Remove(ctx context.Context, images ...string) error {
 
 func (s *State) findAllBlobFiles(ctx context.Context) ([]string, error) {
 	queue := make([]string, 0, 1024)
-	queue = append(queue, s.stateDir)
+	queue = append(queue, "")
 
 	result := make([]string, 0, 1024)
 	for len(queue) > 0 {
 		next := make([]string, 0, 1024)
 		for _, dir := range queue {
-			list, err := ioutil.ReadDir(dir)
+			list, err := s.stateVfs.ReadDir(dir)
 			if err != nil {
 				return nil, err
 			}

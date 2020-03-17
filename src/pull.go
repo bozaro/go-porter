@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 
+	"github.com/blang/vfs"
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema2"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -87,7 +87,7 @@ func (s *State) SaveManifest(ctx context.Context, manifest *schema2.Deserialized
 
 func (s *State) blobName(blob distribution.Descriptor, suffix string) string {
 	digest := blob.Digest
-	prefix := path.Join(s.stateDir, digest.Algorithm().String(), digest.Hex()[0:2], digest.Hex()[2:])
+	prefix := path.Join(digest.Algorithm().String(), digest.Hex()[0:2], digest.Hex()[2:])
 	if suffix == "" {
 		suffix = s.mediaTypeSuffix(blob.MediaType)
 	}
@@ -109,18 +109,18 @@ func (s *State) mediaTypeSuffix(mediaType string) string {
 }
 
 func (s *State) OpenBlob(ctx context.Context, blob distribution.Descriptor) (io.ReadCloser, error) {
-	return os.Open(s.blobName(blob, ""))
+	return vfs.Open(s.stateVfs, s.blobName(blob, ""))
 }
 
 func (s *State) ReadBlob(ctx context.Context, blob distribution.Descriptor) ([]byte, error) {
-	return ioutil.ReadFile(s.blobName(blob, ""))
+	return vfs.ReadFile(s.stateVfs, s.blobName(blob, ""))
 }
 
 func (s *State) DownloadBlob(ctx context.Context, image name.Reference, blob distribution.Descriptor) (string, error) {
 	filename := s.blobName(blob, "")
 	digest := blob.Digest
-	_ = os.MkdirAll(path.Dir(filename), 0755)
-	_, err := os.Stat(filename)
+	_ = vfs.MkdirAll(s.stateVfs, path.Dir(filename), 0755)
+	_, err := s.stateVfs.Stat(filename)
 	if err == nil {
 		// Already downloaded
 		return filename, nil
@@ -141,7 +141,7 @@ func (s *State) DownloadBlob(ctx context.Context, image name.Reference, blob dis
 	}
 	defer reader.Close()
 
-	if err := safeWrite(filename, func(w io.Writer) error {
+	if err := safeWrite(s.stateVfs, filename, func(w io.Writer) error {
 		if _, err := io.Copy(w, reader); err != nil {
 			return errorx.InternalError.Wrap(err, "error on downloading blob: %s", digest)
 		}
