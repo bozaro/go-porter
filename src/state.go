@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/blang/vfs"
+	"github.com/blang/vfs/memfs"
 	"github.com/blang/vfs/prefixfs"
 	"github.com/sirupsen/logrus"
 	"github.com/tinylib/msgp/msgp"
@@ -18,6 +19,7 @@ type StateConfig interface {
 	GetLogLevel() logrus.Level
 	GetCacheDir() string
 	GetConfigFile() string
+	GetMemoryCache() bool
 }
 
 type State struct {
@@ -33,7 +35,11 @@ func NewState(config StateConfig) (*State, error) {
 
 	cacheDir := config.GetCacheDir()
 	_ = os.MkdirAll(cacheDir, 0755)
-	stateVfs := prefixfs.Create(vfs.OS(), cacheDir)
+	var stateVfs vfs.Filesystem = prefixfs.Create(vfs.OS(), cacheDir)
+
+	if config.GetMemoryCache() {
+		stateVfs = CreateOverlayFS(stateVfs, memfs.Create())
+	}
 
 	configFile := config.GetConfigFile()
 	var stateConfig Config
