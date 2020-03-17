@@ -4,11 +4,13 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
 
+	"github.com/blang/vfs"
+	"github.com/blang/vfs/memfs"
+	"github.com/blang/vfs/prefixfs"
 	"github.com/sirupsen/logrus"
 	"github.com/tinylib/msgp/msgp"
 )
@@ -17,11 +19,12 @@ type StateConfig interface {
 	GetLogLevel() logrus.Level
 	GetCacheDir() string
 	GetConfigFile() string
+	GetMemoryCache() bool
 }
 
 type State struct {
 	config   Config
-	stateDir string
+	stateVfs vfs.Filesystem
 }
 
 func NewState(config StateConfig) (*State, error) {
@@ -32,6 +35,11 @@ func NewState(config StateConfig) (*State, error) {
 
 	cacheDir := config.GetCacheDir()
 	_ = os.MkdirAll(cacheDir, 0755)
+	var stateVfs vfs.Filesystem = prefixfs.Create(vfs.OS(), cacheDir)
+
+	if config.GetMemoryCache() {
+		stateVfs = CreateOverlayFS(stateVfs, memfs.Create())
+	}
 
 	configFile := config.GetConfigFile()
 	var stateConfig Config
@@ -46,29 +54,29 @@ func NewState(config StateConfig) (*State, error) {
 
 	return &State{
 		config:   stateConfig,
-		stateDir: cacheDir,
+		stateVfs: stateVfs,
 	}, nil
 }
 
 func (s *State) Close() {}
 
-func (s *State) cacheSave(bucket string, key string, data [] byte) error {
+func (s *State) cacheSave(bucket string, key string, data []byte) error {
 	var payload []byte
 	payload = msgp.AppendString(payload, key)
 	payload = msgp.AppendBytes(payload, data)
 
-	return safeWrite(s.cacheFile(bucket, key), func(w io.Writer) error {
+	return safeWrite(s.stateVfs, s.cacheFile(bucket, key), func(w io.Writer) error {
 		_, err := w.Write(payload)
 		return err
 	})
 }
 
 func (s *State) cacheRemove(bucket string, key string) error {
-	return os.Remove(s.cacheFile(bucket, key))
+	return s.stateVfs.Remove(s.cacheFile(bucket, key))
 }
 
 func (s *State) cacheLoad(bucket string, key string) ([]byte, bool, error) {
-	cached, err := ioutil.ReadFile(s.cacheFile(bucket, key))
+	cached, err := vfs.ReadFile(s.stateVfs, s.cacheFile(bucket, key))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, false, nil
@@ -87,8 +95,8 @@ func (s *State) cacheLoad(bucket string, key string) ([]byte, bool, error) {
 }
 
 func (s *State) cacheForEach(bucket string, f func(key string, value []byte) error) error {
-	dir := path.Join(s.stateDir, bucket)
-	items, err := ioutil.ReadDir(dir)
+	dir := bucket
+	items, err := s.stateVfs.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -99,7 +107,7 @@ func (s *State) cacheForEach(bucket string, f func(key string, value []byte) err
 		if item.IsDir() || strings.IndexByte(item.Name(), '~') > 0 {
 			continue
 		}
-		cached, err := ioutil.ReadFile(path.Join(dir, item.Name()))
+		cached, err := vfs.ReadFile(s.stateVfs, path.Join(dir, item.Name()))
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
@@ -126,5 +134,5 @@ func (s *State) cacheForEach(bucket string, f func(key string, value []byte) err
 
 func (s *State) cacheFile(bucket string, key string) string {
 	hash := sha1.Sum([]byte(key))
-	return path.Join(s.stateDir, bucket, hex.EncodeToString(hash[:]))
+	return path.Join(bucket, hex.EncodeToString(hash[:]))
 }

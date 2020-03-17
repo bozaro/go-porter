@@ -25,13 +25,18 @@ import (
 
 type CmdRootT struct {
 	cli.Helper
-	CacheDir   string `cli:"cache" usage:"State directory" dft:"$PORTER_CACHE"`
-	ConfigFile string `cli:"config" usage:"Configuration file" dft:"$PORTER_CONFIG"`
-	LogLevel   string `cli:"log" usage:"Log level (panic, fatal, error, warn, info, debug)" dft:"error"`
+	CacheDir    string `cli:"cache" usage:"State directory" dft:"$PORTER_CACHE"`
+	ConfigFile  string `cli:"config" usage:"Configuration file" dft:"$PORTER_CONFIG"`
+	LogLevel    string `cli:"log" usage:"Log level (panic, fatal, error, warn, info, debug)" dft:"error"`
+	MemoryCache bool   `cli:"memory-cache" usage:"Keep all state changes only in memory"`
 }
 
 func (c CmdRootT) GetCacheDir() string {
 	return c.CacheDir
+}
+
+func (c CmdRootT) GetMemoryCache() bool {
+	return c.MemoryCache
 }
 
 func (c CmdRootT) GetConfigFile() string {

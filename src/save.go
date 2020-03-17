@@ -10,6 +10,7 @@ import (
 	"path"
 	"sort"
 
+	"github.com/blang/vfs"
 	"github.com/google/go-containerregistry/pkg/name"
 
 	"github.com/docker/distribution"
@@ -46,7 +47,7 @@ func (s *State) Save(ctx context.Context, w io.Writer, images ...string) error {
 		}
 		manifests = append(manifests, manifest)
 
-		tags [info.Name()] = manifest.Config.Digest
+		tags[info.Name()] = manifest.Config.Digest
 	}
 
 	// Export layers
@@ -167,7 +168,7 @@ func (s *State) writeLayers(ctx context.Context, w *tar.Writer, manifests ...*sc
 		return queue[i].String() < queue[j].String()
 	})
 	for _, layer := range queue {
-		unpacked, ok := layers[ layer]
+		unpacked, ok := layers[layer]
 		if !ok {
 			return nil, errorx.IllegalState.New("can't find unpacked layer: %s", layer)
 		}
@@ -254,10 +255,10 @@ func (s *State) UnpackedLayer(ctx context.Context, layer distribution.Descriptor
 	}
 
 	if unpackedDesc == nil {
-		tempFile := path.Join(s.stateDir, "~"+uuid.Generate().String()+".tar")
-		defer os.Remove(tempFile)
+		tempFile := path.Join("~" + uuid.Generate().String() + ".tar")
+		defer s.stateVfs.Remove(tempFile)
 
-		rf, err := os.Open(s.blobName(layer, ""))
+		rf, err := vfs.Open(s.stateVfs, s.blobName(layer, ""))
 		if err != nil {
 			return nil, err
 		}
@@ -268,7 +269,7 @@ func (s *State) UnpackedLayer(ctx context.Context, layer distribution.Descriptor
 			return nil, err
 		}
 
-		wf, err := os.Create(tempFile)
+		wf, err := vfs.Create(s.stateVfs, tempFile)
 		hash := sha256.New()
 		size, err := io.Copy(io.MultiWriter(wf, hash), z)
 		if err != nil {
@@ -283,8 +284,8 @@ func (s *State) UnpackedLayer(ctx context.Context, layer distribution.Descriptor
 		}
 
 		unpackedFile := s.blobName(*unpackedDesc, "")
-		os.MkdirAll(path.Dir(unpackedFile), 0755)
-		if err := os.Rename(tempFile, unpackedFile); err != nil {
+		vfs.MkdirAll(s.stateVfs, path.Dir(unpackedFile), 0755)
+		if err := s.stateVfs.Rename(tempFile, unpackedFile); err != nil {
 			return nil, err
 		}
 

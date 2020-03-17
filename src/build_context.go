@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blang/vfs"
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema2"
 	"github.com/docker/distribution/uuid"
@@ -161,13 +162,14 @@ func (b *BuildContext) fileSHA256(ctx context.Context, file string) (digest.Dige
 }
 
 func (b *BuildContext) writeDeltaLayer(ctx context.Context) (digest.Digest, *distribution.Descriptor, error) {
-	tempFile := path.Join(b.state.stateDir, "~"+uuid.Generate().String()+".tar.gz")
+	tempFile := path.Join("~" + uuid.Generate().String() + ".tar.gz")
 	hashTr := sha256.New()
 	hashGz := sha256.New()
 
-	defer os.Remove(tempFile)
+	fs := b.state.stateVfs
+	defer fs.Remove(tempFile)
 
-	f, err := os.Create(tempFile)
+	f, err := vfs.Create(fs, tempFile)
 	if err != nil {
 		return "", nil, err
 	}
@@ -199,8 +201,8 @@ func (b *BuildContext) writeDeltaLayer(ctx context.Context) (digest.Digest, *dis
 		Digest:    digest.NewDigestFromBytes(digest.SHA256, hashGz.Sum(nil)),
 	}
 	target := b.state.blobName(desc, "")
-	_ = os.MkdirAll(path.Dir(target), 0755)
-	if err := os.Rename(tempFile, target); err != nil {
+	_ = vfs.MkdirAll(fs, path.Dir(target), 0755)
+	if err := fs.Rename(tempFile, target); err != nil {
 		return "", nil, err
 	}
 
@@ -252,11 +254,11 @@ func (b *BuildContext) SaveImageManifest(ctx context.Context) (*distribution.Des
 	descriptor := distribution.Descriptor{
 		MediaType: "application/vnd.docker.container.image.v1+json",
 		Size:      int64(len(data)),
-		Digest:    digest.NewDigestFromBytes(digest.SHA256, sum256 [:]),
+		Digest:    digest.NewDigestFromBytes(digest.SHA256, sum256[:]),
 	}
 	filename := b.state.blobName(descriptor, "")
 
-	if err := safeWrite(filename, func(w io.Writer) error {
+	if err := safeWrite(b.state.stateVfs, filename, func(w io.Writer) error {
 		_, err := w.Write(data)
 		return err
 	}); err != nil {

@@ -4,6 +4,7 @@ go 1.13
 
 require (
 	github.com/Bowery/prompt v0.0.0-20190916142128-fa8279994f75 // indirect
+	github.com/blang/vfs v1.0.0
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/docker/docker v1.14.0-0.20190319215453-e7b5f7dbe98c
 	github.com/docker/go-units v0.4.0

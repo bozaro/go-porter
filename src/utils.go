@@ -1,16 +1,18 @@
 package src
 
 import (
-	"github.com/joomcode/errorx"
 	"io"
 	"os"
 	"path"
 	"strconv"
+
+	"github.com/blang/vfs"
+	"github.com/joomcode/errorx"
 )
 
-func safeWrite(filename string, task func(w io.Writer) error) error {
+func safeWrite(fs vfs.Filesystem, filename string, task func(w io.Writer) error) error {
 	if dir := path.Dir(filename); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := vfs.MkdirAll(fs, dir, 0755); err != nil {
 			if !os.IsExist(err) {
 				return err
 			}
@@ -18,7 +20,7 @@ func safeWrite(filename string, task func(w io.Writer) error) error {
 	}
 	for i := 0; ; i++ {
 		tmp := filename + "~" + strconv.Itoa(i)
-		f, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0644)
+		f, err := fs.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0644)
 		if os.IsExist(err) {
 			continue
 		}
@@ -27,15 +29,15 @@ func safeWrite(filename string, task func(w io.Writer) error) error {
 		}
 		defer f.Close()
 		if err := task(f); err != nil {
-			os.Remove(tmp)
+			fs.Remove(tmp)
 			return err
 		}
 		if err := f.Close(); err != nil {
-			os.Remove(tmp)
+			fs.Remove(tmp)
 			return errorx.InternalError.Wrap(err, "error on closing file: %s", tmp)
 		}
-		if err := os.Rename(tmp, filename); err != nil {
-			os.Remove(tmp)
+		if err := fs.Rename(tmp, filename); err != nil {
+			fs.Remove(tmp)
 			return errorx.InternalError.Wrap(err, "error on rename file: %s -> %s", tmp, filename)
 		}
 		return nil
