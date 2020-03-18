@@ -37,10 +37,26 @@ func (m mergeFS) Remove(name string) error {
 }
 
 func (m mergeFS) Rename(oldpath, newpath string) error {
+	dir := path.Dir(newpath)
+	if _, err := m.Stat(oldpath); err == nil {
+		if stat, err := m.base.Stat(dir); err == nil && stat.IsDir() {
+			if err := vfs.MkdirAll(m.delta, dir, 0755); err != nil {
+				return err
+			}
+		}
+	}
 	return m.delta.Rename(oldpath, newpath)
 }
 
 func (m mergeFS) Mkdir(name string, perm os.FileMode) error {
+	dir := path.Dir(name)
+	if dir != "." {
+		if stat, err := m.base.Stat(dir); err == nil && stat.IsDir() {
+			if err := vfs.MkdirAll(m.delta, dir, 0755); err != nil {
+				return err
+			}
+		}
+	}
 	return m.delta.Mkdir(name, perm)
 }
 
