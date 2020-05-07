@@ -23,6 +23,7 @@ type StateConfig interface {
 }
 
 type State struct {
+	configFile string
 	config   Config
 	stateVfs vfs.Filesystem
 }
@@ -53,6 +54,7 @@ func NewState(config StateConfig) (*State, error) {
 	}
 
 	return &State{
+		configFile: configFile,
 		config:   stateConfig,
 		stateVfs: stateVfs,
 	}, nil

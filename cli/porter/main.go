@@ -64,6 +64,12 @@ type cmdBuildT struct {
 	Push       bool   `cli:"push" usage:"Push docker image after build"`
 }
 
+type cmdLoginT struct {
+	CmdRootT
+	Password string `cli:"*p,password" usage:"Password"`
+	Username string `cli:"*u,username" usage:"Username"`
+}
+
 type cmdImageLsT struct {
 	CmdRootT
 }
@@ -204,6 +210,34 @@ func NewImagePullCommand(cmd string) *cli.Command {
 				if _, err := state.Pull(ctx, image, argv.Cached); err != nil {
 					return err
 				}
+			}
+			return nil
+		},
+	}
+}
+
+func NewLoginCommand(cmd string) *cli.Command {
+	return &cli.Command{
+		Name: cmd,
+		Desc: "Log in to a Docker registry",
+		Argv: func() interface{} {
+			return &cmdLoginT{
+				CmdRootT: newCmdRoot(),
+			}
+		},
+		NumArg:      cli.ExactN(1),
+		CanSubRoute: true,
+		Fn: func(c *cli.Context) error {
+			argv := c.Argv().(*cmdLoginT)
+			ctx := context.Background()
+			state, err := src.NewState(argv)
+			if err != nil {
+				return err
+			}
+			defer state.Close()
+
+			if err := state.Login(ctx, argv.Username, argv.Password, c.Args()[0]); err != nil {
+				return err
 			}
 			return nil
 		},
@@ -504,6 +538,7 @@ func main() {
 			cli.Tree(NewImageSaveCommand("save")),
 			cli.Tree(NewImageTagCommand("tag")),
 		),
+		cli.Tree(NewLoginCommand("login")),
 		cli.Tree(NewImagePullCommand("pull")),
 		cli.Tree(NewImagePushCommand("push")),
 		cli.Tree(NewImageRemoveCommand("rmi")),
