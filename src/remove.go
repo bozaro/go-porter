@@ -78,7 +78,10 @@ func (s *State) Remove(ctx context.Context, images ...string) error {
 		}
 		if strings.Contains(file, "~") {
 			stat, err := s.stateVfs.Stat(file)
-			if err != nil && !os.IsNotExist(err) {
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
 				return err
 			}
 			if stat.ModTime().After(keepTime) {
