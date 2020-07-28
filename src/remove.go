@@ -12,6 +12,7 @@ import (
 )
 
 func (s *State) Remove(ctx context.Context, images ...string) error {
+	keepTime := time.Now().Add(-s.config.GetMinTemporaryAge())
 	infos := make([]name.Reference, 0, len(images))
 	// Resolve images
 	for _, image := range images {
@@ -74,6 +75,16 @@ func (s *State) Remove(ctx context.Context, images ...string) error {
 		if _, ok := used[file]; ok {
 			logrus.Debugf("%s - keep", file)
 			continue
+		}
+		if strings.Contains(file, "~") {
+			stat, err := s.stateVfs.Stat(file)
+			if err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			if stat.ModTime().After(keepTime) {
+				logrus.Debugf("%s - keep (recently created)", file)
+				continue
+			}
 		}
 		logrus.Infof("%s - remove", file)
 		if err := s.stateVfs.Remove(file); err != nil && !os.IsNotExist(err) {
