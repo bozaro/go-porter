@@ -22,6 +22,7 @@ import (
 	"github.com/docker/distribution/manifest/schema2"
 	"github.com/docker/distribution/uuid"
 	"github.com/docker/go-units"
+	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/joomcode/errorx"
 	"github.com/klauspost/compress/gzip"
@@ -40,30 +41,52 @@ type BuildContext struct {
 
 type FileFilter func(header *tar.Header)
 
-func NewBuildContext(ctx context.Context, state *State, manifest *schema2.DeserializedManifest, contextPath string) (*BuildContext, error) {
+func NewBuildContext(ctx context.Context, state *State, baseName string, contextPath string) (*BuildContext, error) {
+	if baseName == "scratch" {
+		return &BuildContext{
+			state:       state,
+			contextPath: contextPath,
+			fs: FS{
+				Base: state.EmptyLayer(),
+			},
+		}, nil
+	}
+
+	baseImage, err := name.ParseReference(baseName)
+	if err != nil {
+		return nil, err
+	}
+
+	baseManifest, err := state.Pull(ctx, baseImage, true)
+	if err != nil {
+		return nil, err
+	}
+
 	var imageManifest v1.ConfigFile
-	blob, err := state.ReadBlob(ctx, manifest.Config)
+	blob, err := state.ReadBlob(ctx, baseManifest.Config)
 	if err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(blob, &imageManifest); err != nil {
 		return nil, err
 	}
+
 	root := state.EmptyLayer()
-	for _, layer := range manifest.Layers {
+	for _, layer := range baseManifest.Layers {
 		fsdiff, err := state.LayerTree(ctx, layer)
 		if err != nil {
 			return nil, err
 		}
 		root.ApplyDiff(fsdiff)
 	}
+
 	return &BuildContext{
 		state:       state,
 		contextPath: contextPath,
 		fs: FS{
 			Base: root,
 		},
-		layers:     manifest.Layers,
+		layers:     baseManifest.Layers,
 		configFile: imageManifest,
 	}, nil
 }

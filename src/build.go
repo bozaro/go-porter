@@ -34,17 +34,7 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 		return "", err
 	}
 
-	baseImage, err := name.ParseReference(stage.BaseName)
-	if err != nil {
-		return "", err
-	}
-
-	baseManifest, err := s.Pull(ctx, baseImage, true)
-	if err != nil {
-		return "", err
-	}
-
-	buildContext, err := NewBuildContext(ctx, s, baseManifest, contextPath)
+	buildContext, err := NewBuildContext(ctx, s, stage.BaseName, contextPath)
 	if err != nil {
 		return "", err
 	}
