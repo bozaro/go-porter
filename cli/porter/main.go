@@ -59,7 +59,7 @@ type cmdPullT struct {
 type cmdBuildT struct {
 	CmdRootT
 	Dockerfile string `cli:"f,file" usage:"Name of the Dockerfile"`
-	Tag        string `cli:"*t,tag" usage:"Name and optionally a tag in the 'name:tag' format"`
+	Tag        string `cli:"t,tag" usage:"Name and optionally a tag in the 'name:tag' format"`
 	Target     string `cli:"target" usage:"Set the target build stage to build"`
 	Push       bool   `cli:"push" usage:"Push docker image after build"`
 }
@@ -257,6 +257,10 @@ func NewImageBuildCommand(cmd string) *cli.Command {
 		CanSubRoute: true,
 		Fn: func(c *cli.Context) error {
 			argv := c.Argv().(*cmdBuildT)
+			if argv.Push && (argv.GetTag() == "") {
+				return errorx.IllegalArgument.New("tag is required for push docker images")
+			}
+
 			ctx := context.Background()
 			state, err := src.NewState(argv)
 			if err != nil {
