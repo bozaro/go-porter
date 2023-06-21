@@ -16,11 +16,10 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/joomcode/errorx"
+	"github.com/joomcode/go-porter/src"
 	"github.com/mkideal/cli"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
-
-	"github.com/joomcode/go-porter/src"
 )
 
 type CmdRootT struct {

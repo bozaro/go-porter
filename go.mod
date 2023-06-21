@@ -12,7 +12,7 @@ require (
 	github.com/joomcode/errorx v1.0.0
 	github.com/klauspost/compress v1.16.5
 	github.com/mkideal/cli v0.0.3
-	github.com/moby/buildkit v0.6.4
+	github.com/moby/buildkit v0.11.6
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/tinylib/msgp v1.1.1
@@ -21,36 +21,28 @@ require (
 
 require (
 	github.com/Bowery/prompt v0.0.0-20190916142128-fa8279994f75 // indirect
-	github.com/Microsoft/hcsshim v0.8.5 // indirect
-	github.com/containerd/containerd v1.3.0 // indirect
-	github.com/containerd/continuity v0.0.0-20190827140505-75bee3e2ccb6 // indirect
+	github.com/agext/levenshtein v1.2.3 // indirect
+	github.com/containerd/containerd v1.6.20 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3 // indirect
+	github.com/containerd/typeurl v1.0.2 // indirect
 	github.com/docker/cli v23.0.5+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/labstack/gommon v0.3.0 // indirect
 	github.com/mattn/go-colorable v0.1.4 // indirect
 	github.com/mattn/go-isatty v0.0.12 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mkideal/pkg v0.0.0-20170503154153-3e188c9e7ecc // indirect
+	github.com/moby/patternmatcher v0.5.0 // indirect
+	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0-rc3 // indirect
-	github.com/opencontainers/runc v1.0.0-rc8 // indirect
+	github.com/opencontainers/runc v1.1.5 // indirect
 	github.com/philhofer/fwd v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/vbatts/tar-split v0.11.3 // indirect
 	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/sys v0.7.0 // indirect
-	google.golang.org/genproto v0.0.0-20190502173448-54afdca5d873 // indirect
-	google.golang.org/grpc v1.24.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 )
-
-replace github.com/containerd/containerd => github.com/containerd/containerd v1.3.0
-
-replace github.com/opencontainers/runc => github.com/opencontainers/runc v1.0.0-rc10
-
-replace github.com/docker/docker => github.com/docker/docker v1.4.2-0.20200225044217-9fee52d54415
-
-replace golang.org/x/crypto v0.0.0-20190129210102-0709b304e793 => golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550

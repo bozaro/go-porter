@@ -325,7 +325,7 @@ func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
 		// TODO: Not implemented copy from other docker image
 		return errorx.NotImplemented.New(cmd.String())
 	}
-	dest := cmd.Dest()
+	dest := cmd.DestPath
 	if !path.IsAbs(dest) {
 		dest = path.Join("/", b.configFile.Config.WorkingDir, dest)
 	}
@@ -333,7 +333,7 @@ func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
 	if err != nil {
 		return err
 	}
-	dir := strings.HasSuffix(cmd.Dest(), "/")
+	dir := strings.HasSuffix(cmd.DestPath, "/")
 	if node := b.fs.Get(dest); node != nil {
 		dir = node.Typeflag == tar.TypeDir
 	}
@@ -352,7 +352,7 @@ func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
 		}
 	}
 
-	for _, source := range cmd.Sources() {
+	for _, source := range cmd.SourcePaths {
 		full := source
 		if !path.IsAbs(full) {
 			full = path.Join(b.contextPath, full)
