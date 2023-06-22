@@ -117,7 +117,7 @@ func (s *State) mergeStage(base *instructions.Stage, post *instructions.Stage) *
 func (s *State) parseDockerFile(dockerFile string) ([]*instructions.Stage, error) {
 	file, err := os.Open(dockerFile)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 	defer file.Close()
 
