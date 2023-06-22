@@ -372,22 +372,31 @@ func (b *BuildContext) applyCopyCommand(cmd *instructions.CopyCommand) error {
 			if err := b.addDir(dest, nil, filter); err != nil {
 				return err
 			}
-			for _, dir := range queue {
-				files, err := ioutil.ReadDir(path.Join(full, dir))
-				if err != nil {
-					return err
-				}
-				for _, file := range files {
-					if file.IsDir() {
-						next = append(next, path.Join(dir, file.Name()))
-						if err := b.addDir(path.Join(dest, dir, file.Name()), file, filter); err != nil {
-							return err
-						}
-						continue
-					}
-					if err := b.addFile(path.Join(dest, dir, file.Name()), path.Join(full, dir, file.Name()), filter); err != nil {
+			for {
+				for _, dir := range queue {
+					files, err := ioutil.ReadDir(path.Join(full, dir))
+					if err != nil {
 						return err
 					}
+					for _, file := range files {
+						if file.IsDir() {
+							next = append(next, path.Join(dir, file.Name()))
+							if err := b.addDir(path.Join(dest, dir, file.Name()), file, filter); err != nil {
+								return err
+							}
+							continue
+						}
+						if err := b.addFile(path.Join(dest, dir, file.Name()), path.Join(full, dir, file.Name()), filter); err != nil {
+							return err
+						}
+					}
+				}
+
+				queue = next
+				next = make([]string, 0, 100)
+
+				if len(queue) <= 0 {
+					break
 				}
 			}
 		} else {
