@@ -433,17 +433,35 @@ func (b *BuildContext) addDir(dest string, info os.FileInfo, filters ...FileFilt
 }
 
 func (b *BuildContext) addFile(dest string, source string, filters ...FileFilter) error {
-	stat, err := os.Stat(source)
+	stat, err := os.Lstat(source)
 	if err != nil {
 		return err
 	}
+
+	if stat.Mode()&os.ModeDevice != 0 || stat.Mode()&os.ModeCharDevice != 0 || stat.Mode()&os.ModeSocket != 0 {
+		// TODO
+		return nil
+	}
+
 	fmt.Println(source, "->", dest)
+
 	header := tar.Header{
 		Name:     dest,
 		Typeflag: tar.TypeReg,
 		Size:     stat.Size(),
 		Mode:     int64(stat.Mode()),
 	}
+
+	if stat.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(source)
+		if err != nil {
+			return err
+		}
+
+		header.Typeflag = tar.TypeSymlink
+		header.Linkname = target
+	}
+
 	for _, filter := range filters {
 		if filter != nil {
 			filter(&header)
