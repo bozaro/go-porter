@@ -9,7 +9,7 @@ import (
 
 type DeserializedImageManifest struct {
 	v1.ConfigFile
-	canonical [] byte
+	canonical []byte
 }
 
 // UnmarshalJSON populates a new Manifest struct from JSON data.
