@@ -202,7 +202,7 @@ func (fs *FS) Add(node *TreeNode) error {
 					Header: tar.Header{
 						Name:     target[:end],
 						Typeflag: tar.TypeDir,
-						Mode : 0755,
+						Mode:     0755,
 					},
 				}
 			}
