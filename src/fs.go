@@ -163,7 +163,7 @@ func (fs *FS) Add(node *TreeNode) error {
 	beg := 0
 	if delta == nil {
 		delta = &TreeNode{
-			Header: tar.Header{
+			Header: &tar.Header{
 				Typeflag: tar.TypeDir,
 				Mode:     0755,
 			},
@@ -199,7 +199,7 @@ func (fs *FS) Add(node *TreeNode) error {
 				}
 			} else {
 				child = &TreeNode{
-					Header: tar.Header{
+					Header: &tar.Header{
 						Name:     target[:end],
 						Typeflag: tar.TypeDir,
 						Mode:     0755,
