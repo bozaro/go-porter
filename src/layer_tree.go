@@ -14,14 +14,14 @@ import (
 )
 
 type TreeNode struct {
-	tar.Header
+	*tar.Header
 	Child  map[string]*TreeNode
 	Source string
 }
 
 func (s *State) EmptyLayer() *TreeNode {
 	return &TreeNode{
-		Header: tar.Header{
+		Header: &tar.Header{
 			Typeflag: tar.TypeDir,
 			Mode:     0755,
 		},
@@ -114,14 +114,14 @@ func (t *TreeNode) Add(tarItem *tar.Header) {
 		}
 		if item == nil {
 			item = &TreeNode{
-				Header: tar.Header{
+				Header: &tar.Header{
 					Typeflag: tar.TypeDir,
 					Mode:     0755,
 				},
 			}
 		}
 		if idx < 0 {
-			item.Header = *tarItem
+			item.Header = tarItem
 		}
 		item.Header.Name = fullpath + name
 		node.Child[name] = item

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/containerd/containerd/archive/tarheader"
 	"io"
 	"io/ioutil"
 	"os"
@@ -240,7 +241,7 @@ func (b *BuildContext) writeDir(t *tar.Writer, dir *TreeNode) error {
 	sort.Strings(names)
 	for _, name := range names {
 		node := dir.Child[name]
-		if err := t.WriteHeader(&node.Header); err != nil {
+		if err := t.WriteHeader(node.Header); err != nil {
 			return nil
 		}
 		if node.Typeflag == tar.TypeReg {
@@ -417,14 +418,14 @@ func (b *BuildContext) addDir(dest string, info os.FileInfo, filters ...FileFilt
 	if info != nil {
 		mode = info.Mode()
 	}
-	header := tar.Header{
+	header := &tar.Header{
 		Name:     dest,
 		Typeflag: tar.TypeDir,
 		Mode:     int64(mode),
 	}
 	for _, filter := range filters {
 		if filter != nil {
-			filter(&header)
+			filter(header)
 		}
 	}
 	return b.fs.Add(&TreeNode{
@@ -438,33 +439,29 @@ func (b *BuildContext) addFile(dest string, source string, filters ...FileFilter
 		return err
 	}
 
-	if stat.Mode()&os.ModeDevice != 0 || stat.Mode()&os.ModeCharDevice != 0 || stat.Mode()&os.ModeSocket != 0 {
-		// TODO
-		return nil
+	if stat.Mode()&os.ModeSocket != 0 {
+		return nil // Ignore sockets
 	}
 
 	fmt.Println(source, "->", dest)
 
-	header := tar.Header{
-		Name:     dest,
-		Typeflag: tar.TypeReg,
-		Size:     stat.Size(),
-		Mode:     int64(stat.Mode()),
-	}
-
+	var link string
 	if stat.Mode()&os.ModeSymlink != 0 {
-		target, err := os.Readlink(source)
-		if err != nil {
+		if link, err = os.Readlink(source); err != nil {
 			return err
 		}
-
-		header.Typeflag = tar.TypeSymlink
-		header.Linkname = target
 	}
+
+	header, err := tarheader.FileInfoHeaderNoLookups(stat, link)
+	if err != nil {
+		return err
+	}
+
+	header.Name = dest
 
 	for _, filter := range filters {
 		if filter != nil {
-			filter(&header)
+			filter(header)
 		}
 	}
 	return b.fs.Add(&TreeNode{
