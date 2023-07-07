@@ -61,6 +61,7 @@ type cmdBuildT struct {
 	Tag        string `cli:"t,tag" usage:"Name and optionally a tag in the 'name:tag' format"`
 	Target     string `cli:"target" usage:"Set the target build stage to build"`
 	Push       bool   `cli:"push" usage:"Push docker image after build"`
+	Platform   string `cli:"platform" usage:"Set target platform for build"`
 }
 
 type cmdLoginT struct {
@@ -119,6 +120,10 @@ func (c cmdBuildT) GetTarget() string {
 
 func (c cmdBuildT) GetTag() string {
 	return c.Tag
+}
+
+func (c cmdBuildT) GetPlatform() string {
+	return c.Platform
 }
 
 func newCmdRoot() CmdRootT {
