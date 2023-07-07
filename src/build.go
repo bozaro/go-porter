@@ -2,6 +2,8 @@ package src
 
 import (
 	"context"
+	"github.com/containerd/containerd/platforms"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"os"
 	"path"
 
@@ -16,9 +18,19 @@ type BuildArgs interface {
 	GetDockerfile() string
 	GetTarget() string
 	GetTag() string
+	GetPlatform() string
 }
 
 func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (digest.Digest, error) {
+	var platform *specs.Platform
+	if args.GetPlatform() != "" {
+		p, err := platforms.Parse(args.GetPlatform())
+		if err != nil {
+			return "", err
+		}
+		platform = &p
+	}
+
 	dockerFile := args.GetDockerfile()
 	if dockerFile == "" {
 		dockerFile = path.Join(contextPath, "Dockerfile")
@@ -34,7 +46,7 @@ func (s *State) Build(ctx context.Context, args BuildArgs, contextPath string) (
 		return "", err
 	}
 
-	buildContext, err := NewBuildContext(ctx, s, stage.BaseName, contextPath)
+	buildContext, err := NewBuildContext(ctx, s, stage.BaseName, contextPath, platform)
 	if err != nil {
 		return "", err
 	}

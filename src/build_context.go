@@ -29,6 +29,7 @@ import (
 	"github.com/klauspost/compress/gzip"
 	"github.com/moby/buildkit/frontend/dockerfile/instructions"
 	"github.com/opencontainers/go-digest"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 )
 
@@ -38,11 +39,12 @@ type BuildContext struct {
 	contextPath string
 	layers      []distribution.Descriptor
 	configFile  v1.ConfigFile
+	platform    *specs.Platform
 }
 
 type FileFilter func(header *tar.Header)
 
-func NewBuildContext(ctx context.Context, state *State, baseName string, contextPath string) (*BuildContext, error) {
+func NewBuildContext(ctx context.Context, state *State, baseName string, contextPath string, platform *specs.Platform) (*BuildContext, error) {
 	if baseName == "scratch" {
 		return &BuildContext{
 			state:       state,
@@ -50,6 +52,7 @@ func NewBuildContext(ctx context.Context, state *State, baseName string, context
 			fs: FS{
 				Base: state.EmptyLayer(),
 			},
+			platform: platform,
 		}, nil
 	}
 
@@ -89,6 +92,7 @@ func NewBuildContext(ctx context.Context, state *State, baseName string, context
 		},
 		layers:     baseManifest.Layers,
 		configFile: imageManifest,
+		platform:   platform,
 	}, nil
 }
 
@@ -279,6 +283,7 @@ func (b *BuildContext) SaveImageManifest(ctx context.Context) (*distribution.Des
 		MediaType: "application/vnd.docker.container.image.v1+json",
 		Size:      int64(len(data)),
 		Digest:    digest.NewDigestFromBytes(digest.SHA256, sum256[:]),
+		Platform:  b.platform,
 	}
 	filename := b.state.blobName(descriptor, "")
 

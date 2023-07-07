@@ -56,6 +56,10 @@ func (t TestBuildArgs) GetTag() string {
 	return t.Tag
 }
 
+func (t TestBuildArgs) GetPlatform() string {
+	return ""
+}
+
 func TestBuildEmpty(t *testing.T) {
 	state, err := src.NewState(defaultConfig)
 	assert.NoError(t, err)
